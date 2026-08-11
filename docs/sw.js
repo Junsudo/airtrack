@@ -1,5 +1,5 @@
 /* AIRTRACK service worker — cache-first 완전 오프라인 */
-const VERSION = 'airtrack-v3-airac-2026-08-05';
+const VERSION = 'airtrack-v4-airac-2026-08-05';
 const ASSETS = [
   './',
   './index.html',
@@ -16,6 +16,8 @@ const ASSETS = [
   './data/navaids.geojson',
   './data/areas.geojson',
   './data/airports.geojson',
+  './data/boundaries.geojson',
+  './data/bnd_labels.geojson',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

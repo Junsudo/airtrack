@@ -10,13 +10,19 @@ const BASE = location.href.replace(/[^/]*(\?.*)?$/, '');
 
 const COLORS = {
   bg: '#0a1620',
-  landSK: '#1c2c39', landNK: '#15222d', landOther: '#111d27',
+  // 육지 색은 ato-engine LF 그대로
+  landSK: '#16232e', landNK: '#251a1e', landCN: '#231a1c', landJP: '#121a20', landRU: '#12181d',
   border: '#2c4356', grat: '#11202b',
   rnav: '#35c4e7', conv: '#5b7d94',
   fix: '#cfe3ee', navaid: '#7fe3c3', airport: '#9ad0e8',
+  bndProv: '#3a5a74', bndMuni: '#31506a',
   track: '#ff2fd6',
   own: '#35c4e7', ownEst: '#ffb347',
 };
+// 공역 색 — ato-engine CHARTC 그대로 (ICAO ENR 6 항공로도 범례에서 뽑은 값)
+//   P 금지 적색 · R 제한 녹색 · D 위험 청록 · A 경보 갈색
+//   M 군 운용(MOA) 분홍 · C 민간훈련(CATA) 남색 · I ACMI 회색
+const CHARTC = { P: '#d81820', R: '#50a830', D: '#0098b0', A: '#907050', M: '#f070a8', C: '#205088', I: '#888890' };
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -60,7 +66,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -184,6 +190,22 @@ function addIcons() {
   map.addImage('fix-tri', tri.img, { pixelRatio: tri.ratio });
   map.addImage('navaid-hex', hex.img, { pixelRatio: hex.ratio });
   map.addImage('apt-ring', apt.img, { pixelRatio: apt.ratio });
+  // 특수사용공역 45° 빗금 타일 (ato-engine 패턴 그대로: 바탕 .06 + 선 1.3px .5)
+  for (const [cls, color] of Object.entries(CHARTC)) {
+    const h = drawIcon(7, (ctx, s) => {
+      ctx.globalAlpha = 0.06;
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, s, s);
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(0, s);
+      ctx.lineTo(s, 0);
+      ctx.stroke();
+    });
+    map.addImage('hx' + cls, h.img, { pixelRatio: h.ratio });
+  }
 }
 
 /* ---------------- 레이어 ---------------- */
@@ -197,10 +219,15 @@ const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
 
 function addLayers() {
   const FONT = ['Open Sans Semibold'];
+  // maxzoom 12: GeoJSON 내부 타일링(geojson-vt)의 최대 분할 깊이 제한 — 그 이상은
+  // overzoom으로 재사용해 고배율 성능을 아낀다. LOD 단순화는 geojson-vt가 줌별로 수행.
+  const big = { type: 'geojson', maxzoom: 12, tolerance: 0.5 };
   map.addSource('grat', { type: 'geojson', data: graticule() });
-  map.addSource('land', { type: 'geojson', data: DATA.land });
-  map.addSource('areas', { type: 'geojson', data: DATA.areas });
-  map.addSource('airways', { type: 'geojson', data: DATA.airways });
+  map.addSource('land', { ...big, data: DATA.land });
+  map.addSource('boundaries', { ...big, data: DATA.boundaries });
+  map.addSource('bnd-labels', { type: 'geojson', data: DATA.bnd_labels });
+  map.addSource('areas', { ...big, data: DATA.areas });
+  map.addSource('airways', { ...big, tolerance: 0.2, data: DATA.airways });
   map.addSource('fixes', { type: 'geojson', data: DATA.fixes });
   map.addSource('navaids', { type: 'geojson', data: DATA.navaids });
   map.addSource('airports', { type: 'geojson', data: DATA.airports });
@@ -225,43 +252,71 @@ function addLayers() {
       'fill-color': ['match', ['get', 'name'],
         'South Korea', COLORS.landSK,
         'North Korea', COLORS.landNK,
-        COLORS.landOther],
+        'China', COLORS.landCN,
+        'Russia', COLORS.landRU,
+        COLORS.landJP],
     },
   });
   map.addLayer({ id: 'land-line', type: 'line', source: 'land', paint: { 'line-color': COLORS.border, 'line-width': 0.8 } });
+  // 행정경계: 시도는 넓은 줌부터, 시군구는 확대해야 등장 (LOD)
+  map.addLayer({
+    id: 'bnd-muni-line', type: 'line', source: 'boundaries', minzoom: 7.8,
+    filter: ['==', ['get', 'level'], 2],
+    paint: { 'line-color': COLORS.bndMuni, 'line-width': 0.6, 'line-opacity': 0.7, 'line-dasharray': [2, 2] },
+  });
+  map.addLayer({
+    id: 'bnd-prov-line', type: 'line', source: 'boundaries', minzoom: 5.2,
+    filter: ['==', ['get', 'level'], 1],
+    paint: { 'line-color': COLORS.bndProv, 'line-width': 0.9, 'line-opacity': 0.8 },
+  });
+  map.addLayer({
+    id: 'bnd-prov-label', type: 'symbol', source: 'bnd-labels', minzoom: 5.8, maxzoom: 10.5,
+    filter: ['==', ['get', 'level'], 1],
+    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 10.5 },
+    paint: { 'text-color': '#5c7e97', 'text-opacity': 0.85, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
+  });
+  map.addLayer({
+    id: 'bnd-muni-label', type: 'symbol', source: 'bnd-labels', minzoom: 8.6,
+    filter: ['==', ['get', 'level'], 2],
+    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9.5 },
+    paint: { 'text-color': '#4e6d86', 'text-opacity': 0.8, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+  });
 
-  // 공역 (ato-engine 데이터): P/R/D는 기본 표시, 훈련·기타(M/A/C/I)는 기본 숨김
+  // 특수사용공역 — ato-engine 스타일 그대로: ENR 6 범례 색 + 45° 빗금 + 같은 색 외곽선.
+  // P/R/D는 기본 표시, 훈련·기타(M/A/C/I)는 LYR에서 켬.
   const areaColor = ['match', ['get', 'cls'],
-    'P', '#ff5c5c', 'R', '#ffb347', 'D', '#d9d26a',
-    'M', '#8fa0e8', 'A', '#7ed957', '#9aa8b5'];
+    'P', CHARTC.P, 'R', CHARTC.R, 'D', CHARTC.D,
+    'A', CHARTC.A, 'M', CHARTC.M, 'C', CHARTC.C, 'I', CHARTC.I,
+    CHARTC.D];
+  const hatch = ['concat', 'hx', ['get', 'cls']];
   const isPRD = ['match', ['get', 'cls'], ['P', 'R', 'D'], true, false];
   map.addLayer({
     id: 'areas-fill', type: 'fill', source: 'areas', filter: isPRD,
-    paint: { 'fill-color': areaColor, 'fill-opacity': ['match', ['get', 'cls'], 'P', 0.12, 0.06] },
+    paint: { 'fill-pattern': hatch },
   });
   map.addLayer({
     id: 'areas-line', type: 'line', source: 'areas', filter: isPRD,
-    paint: { 'line-color': areaColor, 'line-opacity': 0.65, 'line-width': 1.1, 'line-dasharray': [3, 2] },
+    paint: { 'line-color': areaColor, 'line-opacity': 0.85, 'line-width': 1.1 },
   });
   map.addLayer({
     id: 'areas-label', type: 'symbol', source: 'areas', filter: isPRD, minzoom: 6.6,
     layout: { 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 10 },
-    paint: { 'text-color': areaColor, 'text-opacity': 0.8, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    paint: { 'text-color': areaColor, 'text-opacity': 0.9, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
   });
   map.addLayer({
     id: 'areas2-fill', type: 'fill', source: 'areas', filter: ['!', isPRD],
     layout: { visibility: 'none' },
-    paint: { 'fill-color': areaColor, 'fill-opacity': 0.04 },
+    paint: { 'fill-pattern': hatch },
   });
   map.addLayer({
     id: 'areas2-line', type: 'line', source: 'areas', filter: ['!', isPRD],
     layout: { visibility: 'none' },
-    paint: { 'line-color': areaColor, 'line-opacity': 0.45, 'line-width': 0.8, 'line-dasharray': [2, 2] },
+    paint: { 'line-color': areaColor, 'line-opacity': 0.85, 'line-width': 0.9 },
   });
   map.addLayer({
     id: 'areas2-label', type: 'symbol', source: 'areas', filter: ['!', isPRD], minzoom: 7.5,
     layout: { visibility: 'none', 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 9.5 },
-    paint: { 'text-color': areaColor, 'text-opacity': 0.7, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    paint: { 'text-color': areaColor, 'text-opacity': 0.85, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
   });
 
   map.addLayer({
@@ -353,6 +408,7 @@ const LAYER_GROUPS = {
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
   airports: ['airports'],
+  boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   track: ['track-glow', 'track'],
 };
 

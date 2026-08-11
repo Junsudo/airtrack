@@ -9,7 +9,12 @@
 - 항공로 차트: eAIP ENR 3.1/3.3 파싱 — RNAV/재래식 route 54개(route별 색 구분), fix 553개,
   en-route navaid 11개, 공항 15개. 거리 단위는 NM.
 - 지도·공역: ato-engine(kto.geo.json + areas/airspace) — 해안선, P73/P518(MDL 기반),
-  R/D 구역 등 199개. 훈련공역(M/A/C/I)은 LYR에서 켜는 별도 레이어.
+  R/D 구역 등 199개. 색·빗금은 ato-engine CHARTC = ICAO ENR 6 항공로도 범례 그대로
+  (P 적 · R 녹 · D 청록 · M 분홍 등, 45° hatch + 동색 외곽선). 훈련공역(M/A/C/I)은
+  LYR에서 켜는 별도 레이어.
+- 행정경계: 시도/시군구(southkorea-maps KOSTAT) — LOD 적용(시도 z5.2+, 시군구 z7.8+,
+  라벨은 더 늦게). 한글 라벨은 MapLibre local glyph 생성이라 폰트 파일 불필요.
+- 성능: GeoJSON 소스 maxzoom 12 + geojson-vt 줌별 단순화, 레이어별 min/maxzoom 게이트.
 - GPS: 파란 dart(진행방향 회전) + 정확도 원. airway snap → "Y722 → OLMEN 18.4 km" 표시.
 - DR 폴백: fix가 5초 이상 끊기면 마지막 속도로 항공로를 따라 추정 위치를 전진(주황 dart, "DR ·" 표시).
 - 나침반: 우측 나침반 버튼 탭 → 권한 허용 → 기기 방향 표시.
@@ -73,6 +78,7 @@ python3 tools/from_ato.py     # 지도/공역 (ato-engine 데이터가 바뀐 �
 ```
 tools/parse_eaip.py   eAIP HTML → GeoJSON 파서 (항공로/fix/navaid/공항)
 tools/from_ato.py     ato-engine → 해안선(land)/공역(areas) GeoJSON
+tools/admin.py        시도/시군구 행정경계 + 라벨 중심점 GeoJSON
 tools/clip_land.py    (구) Natural Earth clip — from_ato.py로 대체됨
 raw/                  다운로드 원본 (gitignore)
 docs/                 배포되는 앱 전체 (GitHub Pages 소스)
