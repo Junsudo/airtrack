@@ -12,8 +12,12 @@
   R/D 구역 등 199개. 색·빗금은 ato-engine CHARTC = ICAO ENR 6 항공로도 범례 그대로
   (P 적 · R 녹 · D 청록 · M 분홍 등, 45° hatch + 동색 외곽선). 훈련공역(M/A/C/I)은
   LYR에서 켜는 별도 레이어.
-- 행정경계: 시도/시군구(southkorea-maps KOSTAT) — LOD 적용(시도 z5.2+, 시군구 z7.8+,
-  라벨은 더 늦게). 한글 라벨은 MapLibre local glyph 생성이라 폰트 파일 불필요.
+- 행정경계·정밀 해안선: KOSTAT 원본 TopoJSON을 arc 단위로 단순화(DP, 40m) —
+  arc가 인접 구획의 공유 경계라 이웃끼리 절대 안 어긋나고, 남한 해안선은 사용횟수 1인
+  arc를 이어붙여 만들어 행정경계와 좌표 단위로 일치(tools/admin.py). 경계는 선 피처로
+  중복 없이 저장. LOD: 시도 z5.2+, 시군구 z7.8+, 라벨은 더 늦게. 한글 라벨은
+  MapLibre local glyph 생성이라 폰트 파일 불필요.
+- 하천: ato-engine kto.rivers (한강 등 폴리곤 49 + 지류 선) — 물색으로 육지를 파냄.
 - 군기지: ato-engine korea.py의 K-사이트 기지 + ICAO 매핑 (RKSM/RKSW/RKSO/RKTP/RKTI/RKNN,
   민항 겹침 제외). 청색 마름모.
 - 관제권(CTR) 28개: 군기지 CTR은 eAIP ENR 2.1, 민항 CTR은 각 공항 AD 2.17에서 파싱

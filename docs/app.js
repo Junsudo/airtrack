@@ -67,7 +67,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -244,6 +244,7 @@ function addLayers() {
   map.addSource('grat', { type: 'geojson', data: graticule() });
   map.addSource('land', { ...big, data: DATA.land });
   map.addSource('boundaries', { ...big, data: DATA.boundaries });
+  map.addSource('rivers', { ...big, data: DATA.rivers });
   map.addSource('bnd-labels', { type: 'geojson', data: DATA.bnd_labels });
   map.addSource('areas', { ...big, data: DATA.areas });
   map.addSource('airways', { ...big, tolerance: 0.2, data: DATA.airways });
@@ -278,6 +279,17 @@ function addLayers() {
     },
   });
   map.addLayer({ id: 'land-line', type: 'line', source: 'land', paint: { 'line-color': COLORS.border, 'line-width': 0.8 } });
+  // 하천 (ato-engine kto.rivers): 폴리곤은 물색으로 육지를 파내고, 지류는 선
+  map.addLayer({
+    id: 'river-poly', type: 'fill', source: 'rivers',
+    filter: ['==', ['get', 'kind'], 'poly'],
+    paint: { 'fill-color': COLORS.bg },
+  });
+  map.addLayer({
+    id: 'river-line', type: 'line', source: 'rivers', minzoom: 7.5,
+    filter: ['==', ['get', 'kind'], 'line'],
+    paint: { 'line-color': '#12293a', 'line-width': 1.1, 'line-opacity': 0.8 },
+  });
   // 행정경계: 시도는 넓은 줌부터, 시군구는 확대해야 등장 (LOD)
   map.addLayer({
     id: 'bnd-muni-line', type: 'line', source: 'boundaries', minzoom: 7.8,
@@ -529,7 +541,10 @@ function handleFix(p) {
   const c = p.coords;
   S.pos = {
     lon: c.longitude, lat: c.latitude,
-    alt: c.altitude, spd: c.speed, course: c.heading,
+    alt: c.altitude,
+    // 일부 구현은 무효 speed/heading을 null 대신 -1로 준다
+    spd: (c.speed != null && c.speed >= 0) ? c.speed : null,
+    course: (c.heading != null && c.heading >= 0) ? c.heading : null,
     acc: c.accuracy, t: Date.now(),
   };
   S.est = null;

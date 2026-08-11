@@ -15,6 +15,7 @@ from pathlib import Path
 
 ATO = Path("/Users/junsu/ato-engine")
 ROOT = Path(__file__).resolve().parent.parent
+RAW = ROOT / "raw"
 OUT = ROOT / "docs" / "data"
 
 sys.path.insert(0, str(ATO))
@@ -50,7 +51,11 @@ def ring_from_pts(pts):
 def land():
     src = json.loads((ATO / "web" / "kto.geo.json").read_text())
     feats = []
+    sk_hi = RAW / "land_sk.geojson"  # tools/admin.py가 만든 고해상 남한 (행정경계와 좌표 일치)
     for code, polys in src.items():
+        if code == "SK" and sk_hi.exists():
+            feats.append(json.loads(sk_hi.read_text()))
+            continue
         rings = []
         for poly in polys:
             ring = [[round(x, 5), round(y, 5)] for x, y in poly]
@@ -127,10 +132,29 @@ def merge_airports():
     print(f"airports: +{len(added)} mil {added}, total {len(fc['features'])}")
 
 
+def rivers():
+    feats = []
+    for r in json.loads((ATO / "web" / "kto.riverpoly.json").read_text()):
+        ring = [[round(x, 5), round(y, 5)] for x, y in r["pts"]]
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+        feats.append({"type": "Feature", "properties": {"name": r.get("name", ""), "kind": "poly"},
+                      "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    rv = json.loads((ATO / "web" / "kto.rivers.json").read_text())
+    for r in rv.get("rivers", []):
+        feats.append({"type": "Feature", "properties": {"name": r.get("name", ""), "kind": "line"},
+                      "geometry": {"type": "LineString",
+                                   "coordinates": [[round(x, 5), round(y, 5)] for x, y in r["pts"]]}})
+    (OUT / "rivers.geojson").write_text(json.dumps(
+        {"type": "FeatureCollection", "features": feats}, ensure_ascii=False))
+    print(f"rivers: {len(feats)} features, {(OUT/'rivers.geojson').stat().st_size} bytes")
+
+
 def main():
     lf = land()
     af = areas()
     merge_airports()
+    rivers()
     (OUT / "land.geojson").write_text(json.dumps(
         {"type": "FeatureCollection", "features": lf}, ensure_ascii=False))
     (OUT / "areas.geojson").write_text(json.dumps(
