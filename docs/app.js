@@ -85,7 +85,7 @@ Promise.all([
       center: [126.9, 35.6],
       zoom: 6.1,
       minZoom: 4.5,
-      maxZoom: 13,
+      maxZoom: 14,
       maxBounds: [[119.0, 26.0], [138.0, 45.8]],
       dragRotate: false,
       pitchWithRotate: false,
@@ -286,20 +286,33 @@ function addLayers() {
     paint: { 'fill-color': COLORS.bg },
   });
   map.addLayer({
-    id: 'river-line', type: 'line', source: 'rivers', minzoom: 7.5,
+    id: 'river-line', type: 'line', source: 'rivers', minzoom: 6.5,
     filter: ['==', ['get', 'kind'], 'line'],
-    paint: { 'line-color': '#12293a', 'line-width': 1.1, 'line-opacity': 0.8 },
+    paint: {
+      'line-color': '#14304a',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.8, 12, 2.2],
+      'line-opacity': 0.9,
+    },
   });
   // 행정경계: 시도는 넓은 줌부터, 시군구는 확대해야 등장 (LOD)
   map.addLayer({
     id: 'bnd-muni-line', type: 'line', source: 'boundaries', minzoom: 7.8,
     filter: ['==', ['get', 'level'], 2],
-    paint: { 'line-color': COLORS.bndMuni, 'line-width': 0.6, 'line-opacity': 0.7, 'line-dasharray': [2, 2] },
+    paint: {
+      'line-color': COLORS.bndMuni,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 12, 1.1],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.7, 12, 1],
+      'line-dasharray': [2, 2],
+    },
   });
   map.addLayer({
     id: 'bnd-prov-line', type: 'line', source: 'boundaries', minzoom: 5.2,
     filter: ['==', ['get', 'level'], 1],
-    paint: { 'line-color': COLORS.bndProv, 'line-width': 0.9, 'line-opacity': 0.8 },
+    paint: {
+      'line-color': COLORS.bndProv,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.9, 12, 1.6],
+      'line-opacity': 0.9,
+    },
   });
   map.addLayer({
     id: 'bnd-prov-label', type: 'symbol', source: 'bnd-labels', minzoom: 5.8, maxzoom: 10.5,
@@ -310,8 +323,11 @@ function addLayers() {
   map.addLayer({
     id: 'bnd-muni-label', type: 'symbol', source: 'bnd-labels', minzoom: 8.6,
     filter: ['==', ['get', 'level'], 2],
-    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9.5 },
-    paint: { 'text-color': '#4e6d86', 'text-opacity': 0.8, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    layout: {
+      'text-field': ['get', 'name'], 'text-font': FONT,
+      'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9.5, 13, 13],
+    },
+    paint: { 'text-color': '#7fa3bd', 'text-opacity': 0.95, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
   });
 
   // 특수사용공역 — ato-engine 스타일 그대로: ENR 6 범례 색 + 45° 빗금 + 같은 색 외곽선.
@@ -322,9 +338,12 @@ function addLayers() {
     CHARTC.D];
   const hatch = ['concat', 'hx', ['get', 'cls']];
   const isPRD = ['match', ['get', 'cls'], ['P', 'R', 'D'], true, false];
+  // 확대할수록 빗금 채움을 걷는다. 도시 줌에서 공역이 화면을 통째로 칠하면
+  // 그 아래 구 경계·하천·지명을 읽을 수 없다. 외곽선과 라벨은 그대로 둔다.
+  const fillLOD = ['interpolate', ['linear'], ['zoom'], 9, 1, 12, 0.12];
   map.addLayer({
     id: 'areas-fill', type: 'fill', source: 'areas', filter: isPRD,
-    paint: { 'fill-pattern': hatch },
+    paint: { 'fill-pattern': hatch, 'fill-opacity': fillLOD },
   });
   map.addLayer({
     id: 'areas-line', type: 'line', source: 'areas', filter: isPRD,
@@ -338,7 +357,7 @@ function addLayers() {
   // ato-engine과 동일하게 훈련·기타(M/A/C/I)도 기본 표시. LYR에서 끌 수 있음.
   map.addLayer({
     id: 'areas2-fill', type: 'fill', source: 'areas', filter: ['!', isPRD],
-    paint: { 'fill-pattern': hatch },
+    paint: { 'fill-pattern': hatch, 'fill-opacity': fillLOD },
   });
   map.addLayer({
     id: 'areas2-line', type: 'line', source: 'areas', filter: ['!', isPRD],
