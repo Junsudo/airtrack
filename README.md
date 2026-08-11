@@ -23,8 +23,9 @@
 - 관제권(CTR) 31개 = eAIP ENR 2.1이 나열한 CONTROL ZONE 전수. 군 13곳은 ENR 2.1에
   좌표가 직접 적혀 있고, 나머지 18곳은 "See part 3 AERODROMES(AD)"라 각 공항 AD 2.17에서
   파싱했다(tools/parse_ctr.py). 전부 반경 5 NM 원이며 중심은 해당 문서 AD 2.2의 공식 ARP.
-  라벨 뒤 `*`는 간행물이 인접 구역과의 중복 제외를 명시한 곳(Osan/Seongmu/Sokcho) —
-  원은 제외 전 전체를 그리므로 실제 경계는 그보다 작다.
+  간행물이 중복 제외를 명시한 Osan(수원)·Seongmu(청주)·Sokcho(P518+양양)는 상대 도형을
+  실제로 빼서 경계를 만든다(shapely). 제거량은 해석해와 일치 검증: 오산 4.0%/이론 4.1%,
+  성무 4.5%/4.6%, 속초 54.6%.
 - 공항 좌표는 AD 2.2의 공식 ARP를 쓴다(하드코딩 목록은 인천 1.2km·김포 0.6km 어긋나 있었음).
 - 성능: GeoJSON 소스 maxzoom 12 + geojson-vt 줌별 단순화, 레이어별 min/maxzoom 게이트.
 - GPS: 파란 dart(진행방향 회전) + 정확도 원. airway snap → "Y722 → OLMEN 18.4 km" 표시.

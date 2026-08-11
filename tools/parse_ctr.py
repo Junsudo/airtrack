@@ -108,6 +108,44 @@ def civil_from_ad(arp):
     return out
 
 
+def apply_exclusions(feats):
+    """간행물이 "Excluding ... control zone" / P518 을 적어 둔 구역은 실제 경계가
+    원보다 작다. 겹치는 상대 도형을 빼서 실제 경계로 만든다."""
+    from shapely.geometry import Polygon, mapping
+    from shapely.ops import unary_union
+
+    poly = {f["properties"]["name"]: Polygon(f["geometry"]["coordinates"][0]) for f in feats}
+    areas = json.loads((ROOT / "docs" / "data" / "areas.geojson").read_text())
+    p518 = unary_union([Polygon(f["geometry"]["coordinates"][0])
+                        for f in areas["features"] if f["properties"]["id"].startswith("P518")])
+
+    done = []
+    for f in feats:
+        note = f["properties"].get("note")
+        if not note:
+            continue
+        cuts = []
+        for other in poly:
+            base = other[:-4].strip()  # "Suwon CTR" → "Suwon"
+            if base and re.search(rf"\b{re.escape(base)}\b", note, re.I) and other != f["properties"]["name"]:
+                cuts.append(poly[other])
+        if re.search(r"P\s*518", note, re.I):
+            cuts.append(p518)
+        if not cuts:
+            continue
+        g = poly[f["properties"]["name"]].difference(unary_union(cuts))
+        if g.is_empty or g.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        gj = mapping(g)
+        coords = ([[[round(x, 5), round(y, 5)] for x, y in ring] for ring in gj["coordinates"]]
+                  if gj["type"] == "Polygon" else
+                  [[[[round(x, 5), round(y, 5)] for x, y in ring] for ring in p] for p in gj["coordinates"]])
+        f["geometry"] = {"type": gj["type"], "coordinates": coords}
+        f["properties"]["clipped"] = True
+        done.append(f["properties"]["name"])
+    return done
+
+
 def main():
     soup = BeautifulSoup(SRC.read_text(encoding="utf-8", errors="replace"), "html.parser")
     arp = {}
@@ -166,8 +204,9 @@ def main():
             },
             "geometry": {"type": "Polygon", "coordinates": [ring]},
         })
+    clipped = apply_exclusions(feats)
     DST.write_text(json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False))
-    print(f"ctr: {len(feats)} zones, {DST.stat().st_size} bytes")
+    print(f"ctr: {len(feats)} zones, {DST.stat().st_size} bytes | 제외 반영: {clipped}")
     for f in feats:
         p = f["properties"]
         print(f"  {p['name']:<28} {p['kind']:<6} {p['vert']} {p['cls']}")

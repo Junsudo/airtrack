@@ -439,12 +439,7 @@ function addLayers() {
   });
   map.addLayer({
     id: 'ctr-label', type: 'symbol', source: 'ctr', minzoom: 8.2,
-    // note가 있으면 * — 간행물이 다른 구역과 겹치는 부분을 제외한다고 적은 곳.
-    // 원은 제외 전 전체를 그리므로 실제 경계는 그보다 작다.
-    layout: {
-      'text-field': ['case', ['has', 'note'], ['concat', ['get', 'name'], ' *'], ['get', 'name']],
-      'text-font': FONT, 'text-size': 9,
-    },
+    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9 },
     paint: { 'text-color': '#3d9bff', 'text-opacity': 0.75, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
   });
   map.addLayer({
