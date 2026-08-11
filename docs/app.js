@@ -303,20 +303,19 @@ function addLayers() {
     layout: { 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 10 },
     paint: { 'text-color': areaColor, 'text-opacity': 0.9, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
   });
+  // ato-engine과 동일하게 훈련·기타(M/A/C/I)도 기본 표시. LYR에서 끌 수 있음.
   map.addLayer({
     id: 'areas2-fill', type: 'fill', source: 'areas', filter: ['!', isPRD],
-    layout: { visibility: 'none' },
     paint: { 'fill-pattern': hatch },
   });
   map.addLayer({
     id: 'areas2-line', type: 'line', source: 'areas', filter: ['!', isPRD],
-    layout: { visibility: 'none' },
     paint: { 'line-color': areaColor, 'line-opacity': 0.85, 'line-width': 0.9 },
   });
   map.addLayer({
     id: 'areas2-label', type: 'symbol', source: 'areas', filter: ['!', isPRD], minzoom: 7.5,
-    layout: { visibility: 'none', 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 9.5 },
-    paint: { 'text-color': areaColor, 'text-opacity': 0.85, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    layout: { 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 9.5 },
+    paint: { 'text-color': areaColor, 'text-opacity': 0.9, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
   });
 
   map.addLayer({
@@ -642,10 +641,11 @@ function renderTrack() {
     dist += distM(S.track[i - 1].lon, S.track[i - 1].lat, S.track[i].lon, S.track[i].lat);
   }
   const dur = S.track.length > 1 ? (S.track[S.track.length - 1].t - S.track[0].t) / 1000 : 0;
-  const mm = String(Math.floor(dur / 60) % 60).padStart(2, '0');
   const hh = String(Math.floor(dur / 3600)).padStart(2, '0');
+  const mm = String(Math.floor(dur / 60) % 60).padStart(2, '0');
+  const ss = String(Math.floor(dur % 60)).padStart(2, '0');
   $('trk-stats').textContent = S.track.length
-    ? `${fmtNM(dist)} NM · ${hh}:${mm} · ${S.track.length}pt` : '';
+    ? `${fmtNM(dist)} NM · ${hh}:${mm}:${ss}` : '';
 }
 
 function saveTrack() {
