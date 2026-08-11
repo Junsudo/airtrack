@@ -1,0 +1,168 @@
+:root {
+  --bg: #0a1620;
+  --panel: rgba(10, 22, 32, 0.88);
+  --line: #2c4356;
+  --cyan: #35c4e7;
+  --text: #cfe3ee;
+  --dim: #7f9bb0;
+  --ok: #3ddc84;
+  --warn: #ffb347;
+  --bad: #ff5c5c;
+  --mag: #ff2fd6;
+  --sa-t: env(safe-area-inset-top, 0px);
+  --sa-b: env(safe-area-inset-bottom, 0px);
+  --sa-l: env(safe-area-inset-left, 0px);
+  --sa-r: env(safe-area-inset-right, 0px);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+#map { position: fixed; inset: 0; background: var(--bg); }
+
+/* ---------- 상단 HUD ---------- */
+#hud {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  padding: calc(var(--sa-t) + 8px) calc(var(--sa-r) + 10px) 8px calc(var(--sa-l) + 10px);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: linear-gradient(rgba(10,22,32,0.92), rgba(10,22,32,0.55) 75%, transparent);
+  pointer-events: none;
+  z-index: 20;
+}
+#hud > * { pointer-events: auto; }
+#hud-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pill {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.4px;
+  padding: 4px 9px; border-radius: 999px;
+  background: #22303c; color: var(--dim);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.pill.ok   { background: rgba(61,220,132,0.14); color: var(--ok);   border-color: rgba(61,220,132,0.5); }
+.pill.warn { background: rgba(255,179,71,0.14); color: var(--warn); border-color: rgba(255,179,71,0.5); }
+.pill.bad  { background: rgba(255,92,92,0.14);  color: var(--bad);  border-color: rgba(255,92,92,0.5); }
+#snap {
+  font-size: 13px; font-weight: 600; color: var(--cyan);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#hud-right { display: flex; gap: 12px; }
+.metric { text-align: right; }
+.metric b {
+  display: block; font-size: 17px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: #fff; line-height: 1.05;
+}
+.metric small { font-size: 10px; color: var(--dim); letter-spacing: 0.5px; }
+
+/* ---------- 우측 컨트롤 ---------- */
+#rightcol {
+  position: fixed;
+  right: calc(var(--sa-r) + 10px);
+  top: 50%; transform: translateY(-58%);
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 20;
+}
+#rightcol button {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line);
+  font-size: 19px; font-weight: 700;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#rightcol button:active { background: #1d3242; }
+#rightcol button.on { color: var(--cyan); border-color: var(--cyan); }
+
+#compass {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--panel); border: 1px solid var(--line);
+  position: relative; overflow: hidden;
+}
+#compass svg { width: 100%; height: 100%; display: block; }
+#compass .hdg-num {
+  position: absolute; left: 0; right: 0; bottom: 1px;
+  text-align: center; font-size: 8px; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 하단 바 ---------- */
+#bottombar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 8px calc(var(--sa-r) + 10px) calc(var(--sa-b) + 8px) calc(var(--sa-l) + 10px);
+  display: flex; align-items: center; gap: 8px;
+  background: linear-gradient(transparent, rgba(10,22,32,0.7) 25%, rgba(10,22,32,0.94));
+  z-index: 20;
+}
+#bottombar button {
+  height: 38px; padding: 0 12px; border-radius: 9px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line);
+  font-size: 13px; font-weight: 700; white-space: nowrap;
+}
+#bottombar button:active { background: #1d3242; }
+#btn-rec.on { color: var(--bad); border-color: var(--bad); animation: blink 1.6s infinite; }
+@keyframes blink { 50% { opacity: 0.55; } }
+#trk-stats {
+  font-size: 12px; color: var(--dim);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.spacer { flex: 1; }
+#bottombar button.on { color: var(--cyan); border-color: var(--cyan); }
+
+/* ---------- 레이어 패널 ---------- */
+#layers-panel {
+  position: fixed;
+  right: calc(var(--sa-r) + 10px);
+  bottom: calc(var(--sa-b) + 60px);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 9px;
+  z-index: 30;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#layers-panel label { display: flex; align-items: center; gap: 9px; font-size: 14px; }
+#layers-panel input { width: 17px; height: 17px; accent-color: var(--cyan); }
+
+/* ---------- 배너/토스트 ---------- */
+#demo-banner {
+  position: fixed; top: calc(var(--sa-t) + 54px); left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255,179,71,0.16); color: var(--warn);
+  border: 1px solid rgba(255,179,71,0.6);
+  font-size: 11px; font-weight: 800; letter-spacing: 2px;
+  padding: 3px 12px; border-radius: 999px; z-index: 25;
+}
+#toast {
+  position: fixed; left: 50%; bottom: calc(var(--sa-b) + 70px);
+  transform: translateX(-50%);
+  background: #16242f; border: 1px solid var(--line); color: var(--text);
+  padding: 9px 16px; border-radius: 10px; font-size: 13px;
+  max-width: 86vw; text-align: center;
+  z-index: 40; transition: opacity 0.3s;
+}
+#toast[hidden] { display: none; }
+
+[hidden] { display: none !important; }
+
+/* MapLibre 기본 UI 정리 */
+.maplibregl-ctrl-attrib {
+  background: rgba(10,22,32,0.6) !important;
+  color: var(--dim) !important;
+  font-size: 9px !important;
+}
+.maplibregl-ctrl-attrib a { color: var(--dim) !important; }
+
+/* 데스크톱 */
+@media (min-width: 700px) {
+  .metric b { font-size: 20px; }
+  #snap { font-size: 15px; }
+}

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a1620">
+<title>AIRTRACK</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="map"></div>
+
+<header id="hud">
+  <div id="hud-left">
+    <span id="gps-pill" class="pill">GPS —</span>
+    <span id="snap"></span>
+  </div>
+  <div id="hud-right">
+    <span class="metric"><b id="m-gs">—</b><small>GS kt</small></span>
+    <span class="metric"><b id="m-alt">—</b><small>ALT ft</small></span>
+    <span class="metric"><b id="m-trk">—</b><small>TRK°</small></span>
+  </div>
+</header>
+
+<div id="rightcol">
+  <button id="btn-zi" aria-label="확대">+</button>
+  <button id="btn-zo" aria-label="축소">−</button>
+  <button id="btn-follow" class="on" aria-label="내 위치 따라가기" title="follow">◎</button>
+  <div id="compass" role="button" aria-label="나침반 켜기" title="나침반">
+    <svg viewBox="0 0 44 44">
+      <g id="rose">
+        <circle cx="22" cy="22" r="17" fill="none" stroke="#2c4356" stroke-width="1.5"/>
+        <polygon points="22,7 25,22 22,20 19,22" fill="#ff5c5c"/>
+        <polygon points="22,37 25,22 22,24 19,22" fill="#7f9bb0"/>
+        <text x="22" y="5.5" text-anchor="middle" font-size="6" fill="#cfe3ee" font-weight="700">N</text>
+      </g>
+    </svg>
+    <div class="hdg-num" id="hdg-num">--</div>
+  </div>
+</div>
+
+<footer id="bottombar">
+  <button id="btn-rec">● REC</button>
+  <span id="trk-stats"></span>
+  <button id="btn-gpx">GPX</button>
+  <button id="btn-clear" aria-label="트랙 삭제">✕</button>
+  <span class="spacer"></span>
+  <button id="btn-layers">LYR</button>
+  <button id="btn-wake" aria-label="화면 항상 켜기">☀</button>
+</footer>
+
+<div id="layers-panel" hidden>
+  <label><input type="checkbox" data-group="airways" checked> 항공로</label>
+  <label><input type="checkbox" data-group="fixes" checked> Fix</label>
+  <label><input type="checkbox" data-group="navaids" checked> Navaid</label>
+  <label><input type="checkbox" data-group="areas" checked> 제한구역</label>
+  <label><input type="checkbox" data-group="airports" checked> 공항</label>
+  <label><input type="checkbox" data-group="track" checked> 트랙</label>
+</div>
+
+<div id="demo-banner" hidden>DEMO FLIGHT</div>
+<div id="toast" hidden></div>
+
+<script>
+/* 페이지가 hidden 상태로 로드되는 환경(헤드리스/미리보기 패널)에서는 rAF가 멈춰
+ * MapLibre 렌더 루프가 죽는다. 그 경우에만 setTimeout 폴백으로 프레임을 공급한다. */
+(function () {
+  if (document.visibilityState !== 'hidden') return;
+  var native = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = function (cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; cb(performance.now()); } }, 40);
+    native(function (ts) { if (!done) { done = true; clearTimeout(t); cb(ts); } });
+    return t;
+  };
+  window.cancelAnimationFrame = function (h) { clearTimeout(h); };
+})();
+</script>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
