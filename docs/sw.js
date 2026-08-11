@@ -1,5 +1,5 @@
 /* AIRTRACK service worker — cache-first 완전 오프라인 */
-const VERSION = 'airtrack-v10-airac-2026-08-05';
+const VERSION = 'airtrack-v11-airac-2026-08-05';
 const ASSETS = [
   './',
   './index.html',
@@ -26,8 +26,13 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
+  // GitHub Pages가 max-age=600을 주므로 addAll을 그냥 쓰면 갱신 직후에도
+  // 브라우저 HTTP 캐시의 옛 파일이 그대로 담긴다. 설치 때는 항상 원본을 받는다.
   e.waitUntil(
-    caches.open(VERSION).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(VERSION).then((c) => Promise.all(
+      ASSETS.map((url) => fetch(new Request(url, { cache: 'reload' }))
+        .then((res) => (res.ok ? c.put(url, res) : null)))
+    )).then(() => self.skipWaiting())
   );
 });
 

@@ -877,6 +877,10 @@ function bindUI() {
         const keys = await caches.keys();
         await Promise.all(keys.map((k) => caches.delete(k)));
       }
+      // SW 캐시를 지워도 브라우저 HTTP 캐시(max-age=600)가 옛 파일을 준다.
+      // 핵심 파일을 강제로 다시 받아 HTTP 캐시 항목을 갈아끼운 뒤 리로드한다.
+      await Promise.all(['./', 'index.html', 'app.js', 'style.css', 'sw.js']
+        .map((u) => fetch(new Request(u, { cache: 'reload' })).catch(() => null)));
     } catch (e) { /* 캐시 접근 실패해도 리로드는 진행 */ }
     location.reload();
   };
