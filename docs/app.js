@@ -797,6 +797,21 @@ function bindUI() {
   };
 
   $('btn-layers').onclick = () => { $('layers-panel').hidden = !$('layers-panel').hidden; };
+  $('btn-cache-reset').onclick = async () => {
+    if (!navigator.onLine) { toast('오프라인 상태에서는 캐시를 지울 수 없습니다 (재다운로드 불가)'); return; }
+    if (!confirm('캐시를 비우고 최신 버전을 다시 받을까요?\n(트랙 기록은 유지됩니다)')) return;
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) { /* 캐시 접근 실패해도 리로드는 진행 */ }
+    location.reload();
+  };
   document.querySelectorAll('#layers-panel input').forEach((cb) => {
     cb.onchange = () => {
       const ids = LAYER_GROUPS[cb.dataset.group] || [];
