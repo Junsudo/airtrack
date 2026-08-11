@@ -54,6 +54,7 @@ const S = {
   est: null,          // DR 추정 위치 {lon,lat,course}
   hdg: null,          // 기기 나침반 heading (deviceorientation)
   lastOwn: null,      // 마지막 own-ship 렌더 인자 (나침반 회전 재렌더용)
+  fixLog: [],         // 최근 fix 수신 시각 (갱신률 계산용)
   snap: null,         // {routeId, coords, cum, s, nextName, nextDist}
   follow: true,
   recording: false,
@@ -501,7 +502,9 @@ function handleFix(p) {
   updateSnap(S.pos.lon, S.pos.lat, S.pos.course, false);
   renderOwn(S.pos.lon, S.pos.lat, S.pos.course ?? 0, false, S.pos.acc);
   updateHUD(S.pos.spd, S.pos.alt, S.pos.course);
-  setPill('ok', `GPS ±${Math.round(S.pos.acc)}m`);
+  S.fixLog.push(S.pos.t);
+  while (S.fixLog.length && S.pos.t - S.fixLog[0] > 12000) S.fixLog.shift();
+  setPill('ok', gpsPillText());
   if (S.recording) appendTrack(S.pos);
   if (S.follow) map.easeTo({ center: [S.pos.lon, S.pos.lat], duration: 800 });
 }
@@ -582,6 +585,23 @@ function updateHUD(spd, alt, course) {
   $('m-gs').textContent = spd != null ? Math.round(spd * 1.9438) : '—';
   $('m-alt').textContent = alt != null ? Math.round(alt * 3.2808).toLocaleString() : '—';
   $('m-trk').textContent = course != null ? String(Math.round(course)).padStart(3, '0') : '—';
+}
+
+/* iOS는 위성 개수를 앱에 노출하지 않는다(웹·네이티브 공통). 대신 관측 가능한
+ * 지표로 신호 품질을 요약한다: 수평 accuracy → 4단계 바, fix 갱신률(저하 시만 표시). */
+function gpsPillText() {
+  const acc = S.pos.acc;
+  const n = acc <= 8 ? 4 : acc <= 20 ? 3 : acc <= 50 ? 2 : acc <= 120 ? 1 : 0;
+  const bars = '▮'.repeat(n) + '▯'.repeat(4 - n);
+  let txt = `GPS ${bars} ±${Math.round(acc)}m`;
+  if (S.fixLog.length >= 2) {
+    const win = S.fixLog[S.fixLog.length - 1] - S.fixLog[0];
+    if (win > 3000) {
+      const hz = (S.fixLog.length - 1) / (win / 1000);
+      if (hz < 0.8) txt += ` · ${hz.toFixed(1)}Hz`;
+    }
+  }
+  return txt;
 }
 
 function setPill(cls, text) {
