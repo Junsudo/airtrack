@@ -50,9 +50,6 @@
 <footer id="bottombar">
   <button id="btn-rec">● REC</button>
   <span id="trk-stats"></span>
-  <button id="btn-gpx">GPX</button>
-  <button id="btn-clear" aria-label="트랙 삭제">✕</button>
-  <span class="spacer"></span>
   <button id="btn-layers">LYR</button>
   <button id="btn-wake" aria-label="화면 항상 켜기">☀</button>
 </footer>
@@ -61,9 +58,14 @@
   <label><input type="checkbox" data-group="airways" checked> 항공로</label>
   <label><input type="checkbox" data-group="fixes" checked> Fix</label>
   <label><input type="checkbox" data-group="navaids" checked> Navaid</label>
-  <label><input type="checkbox" data-group="areas" checked> 제한구역</label>
+  <label><input type="checkbox" data-group="areas" checked> 금지·제한구역</label>
+  <label><input type="checkbox" data-group="areas2"> 훈련공역 등</label>
   <label><input type="checkbox" data-group="airports" checked> 공항</label>
   <label><input type="checkbox" data-group="track" checked> 트랙</label>
+  <div class="panel-actions">
+    <button id="btn-gpx">GPX 내보내기</button>
+    <button id="btn-clear">트랙 삭제</button>
+  </div>
 </div>
 
 <div id="demo-banner" hidden>DEMO FLIGHT</div>

@@ -20,6 +20,9 @@ const COLORS = {
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const fmtNM = (m) => (m / 1852).toFixed(1);
+// 항로 구분용 팔레트 (어두운 배경에서 상호 구분되는 8색, RNAV route에 순환 배정)
+const ROUTE_PALETTE = ['#35c4e7', '#5b8def', '#2fd6b5', '#9d7bff', '#e0c060', '#ff9f5a', '#ff7ab8', '#7ed957'];
 const R_EARTH = 6371000;
 const D2R = Math.PI / 180;
 
@@ -43,6 +46,8 @@ function angDiff(a, b) {
 const S = {
   pos: null,          // {lon,lat,alt,spd,course,acc,t} 마지막 실제 fix
   est: null,          // DR 추정 위치 {lon,lat,course}
+  hdg: null,          // 기기 나침반 heading (deviceorientation)
+  lastOwn: null,      // 마지막 own-ship 렌더 인자 (나침반 회전 재렌더용)
   snap: null,         // {routeId, coords, cum, s, nextName, nextDist}
   follow: true,
   recording: false,
@@ -81,7 +86,7 @@ Promise.all([
     });
     map.touchZoomRotate.disableRotation();
     map.touchPitch && map.touchPitch.disable();
-    map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-left');
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'nautical' }), 'bottom-left');
     map.on('load', res);
   }),
 ]).then(() => {
@@ -204,6 +209,14 @@ function addLayers() {
   map.addSource('acc', { type: 'geojson', data: emptyFC() });
 
   const isRNAV = ['match', ['slice', ['get', 'id'], 0, 1], ['Y', 'Z', 'L'], true, false];
+  // RNAV route별 고유색: 정렬된 id 순서로 팔레트 순환 배정 → 인접/교차 항로 구분
+  const rnavIds = DATA.airways.features
+    .map((f) => f.properties.id)
+    .filter((id) => ['Y', 'Z', 'L'].includes(id[0]))
+    .sort();
+  const routeColor = ['match', ['get', 'id']];
+  rnavIds.forEach((id, i) => routeColor.push(id, ROUTE_PALETTE[i % ROUTE_PALETTE.length]));
+  routeColor.push(COLORS.conv);
 
   map.addLayer({ id: 'grat', type: 'line', source: 'grat', paint: { 'line-color': COLORS.grat, 'line-width': 0.6 } });
   map.addLayer({
@@ -217,19 +230,38 @@ function addLayers() {
   });
   map.addLayer({ id: 'land-line', type: 'line', source: 'land', paint: { 'line-color': COLORS.border, 'line-width': 0.8 } });
 
-  const areaColor = ['match', ['get', 'cls'], 'P', '#ff5c5c', 'R', '#ffb347', '#d9d26a'];
+  // 공역 (ato-engine 데이터): P/R/D는 기본 표시, 훈련·기타(M/A/C/I)는 기본 숨김
+  const areaColor = ['match', ['get', 'cls'],
+    'P', '#ff5c5c', 'R', '#ffb347', 'D', '#d9d26a',
+    'M', '#8fa0e8', 'A', '#7ed957', '#9aa8b5'];
+  const isPRD = ['match', ['get', 'cls'], ['P', 'R', 'D'], true, false];
   map.addLayer({
-    id: 'areas-fill', type: 'fill', source: 'areas',
-    paint: { 'fill-color': areaColor, 'fill-opacity': ['match', ['get', 'cls'], 'P', 0.09, 0.04] },
+    id: 'areas-fill', type: 'fill', source: 'areas', filter: isPRD,
+    paint: { 'fill-color': areaColor, 'fill-opacity': ['match', ['get', 'cls'], 'P', 0.12, 0.06] },
   });
   map.addLayer({
-    id: 'areas-line', type: 'line', source: 'areas',
-    paint: { 'line-color': areaColor, 'line-opacity': 0.5, 'line-width': 1, 'line-dasharray': [3, 2] },
+    id: 'areas-line', type: 'line', source: 'areas', filter: isPRD,
+    paint: { 'line-color': areaColor, 'line-opacity': 0.65, 'line-width': 1.1, 'line-dasharray': [3, 2] },
   });
   map.addLayer({
-    id: 'areas-label', type: 'symbol', source: 'areas', minzoom: 7.2,
+    id: 'areas-label', type: 'symbol', source: 'areas', filter: isPRD, minzoom: 6.6,
     layout: { 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 10 },
-    paint: { 'text-color': areaColor, 'text-opacity': 0.75, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    paint: { 'text-color': areaColor, 'text-opacity': 0.8, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+  });
+  map.addLayer({
+    id: 'areas2-fill', type: 'fill', source: 'areas', filter: ['!', isPRD],
+    layout: { visibility: 'none' },
+    paint: { 'fill-color': areaColor, 'fill-opacity': 0.04 },
+  });
+  map.addLayer({
+    id: 'areas2-line', type: 'line', source: 'areas', filter: ['!', isPRD],
+    layout: { visibility: 'none' },
+    paint: { 'line-color': areaColor, 'line-opacity': 0.45, 'line-width': 0.8, 'line-dasharray': [2, 2] },
+  });
+  map.addLayer({
+    id: 'areas2-label', type: 'symbol', source: 'areas', filter: ['!', isPRD], minzoom: 7.5,
+    layout: { visibility: 'none', 'text-field': ['get', 'id'], 'text-font': FONT, 'text-size': 9.5 },
+    paint: { 'text-color': areaColor, 'text-opacity': 0.7, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
   });
 
   map.addLayer({
@@ -238,16 +270,16 @@ function addLayers() {
   });
   map.addLayer({
     id: 'awy-rnav', type: 'line', source: 'airways', filter: isRNAV,
-    paint: { 'line-color': COLORS.rnav, 'line-width': 1.4, 'line-opacity': 0.85 },
+    paint: { 'line-color': routeColor, 'line-width': 1.4, 'line-opacity': 0.9 },
   });
   map.addLayer({
     id: 'awy-label', type: 'symbol', source: 'airways',
     layout: {
       'symbol-placement': 'line', 'text-field': ['get', 'id'], 'text-font': FONT,
-      'text-size': 11, 'symbol-spacing': 330, 'text-padding': 4,
+      'text-size': 11, 'symbol-spacing': 190, 'text-padding': 4,
     },
     paint: {
-      'text-color': ['case', isRNAV, COLORS.rnav, COLORS.conv],
+      'text-color': routeColor,
       'text-halo-color': COLORS.bg, 'text-halo-width': 1.6,
     },
   });
@@ -296,8 +328,12 @@ function addLayers() {
     paint: { 'fill-color': COLORS.own, 'fill-opacity': 0.08 },
   });
   map.addLayer({
+    id: 'track-glow', type: 'line', source: 'track',
+    paint: { 'line-color': COLORS.track, 'line-width': 6, 'line-opacity': 0.25, 'line-blur': 2 },
+  });
+  map.addLayer({
     id: 'track', type: 'line', source: 'track',
-    paint: { 'line-color': COLORS.track, 'line-width': 2, 'line-opacity': 0.9 },
+    paint: { 'line-color': COLORS.track, 'line-width': 2.8, 'line-opacity': 0.95 },
   });
   map.addLayer({
     id: 'own', type: 'symbol', source: 'own',
@@ -315,8 +351,9 @@ const LAYER_GROUPS = {
   fixes: ['fixes-on', 'fixes-off'],
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
+  areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
   airports: ['airports'],
-  track: ['track'],
+  track: ['track-glow', 'track'],
 };
 
 /* ---------------- 항공로 snap ---------------- */
@@ -419,8 +456,7 @@ function updateSnap(lon, lat, course, isDR) {
   S.snap = sn;
   const el = $('snap');
   if (!sn) { el.textContent = ''; return; }
-  const km = (sn.nextDist / 1000).toFixed(1);
-  el.textContent = `${isDR ? 'DR · ' : ''}${sn.routeId} → ${sn.nextName} ${km} km`;
+  el.textContent = `${isDR ? 'DR · ' : ''}${sn.routeId} → ${sn.nextName} ${fmtNM(sn.nextDist)} NM`;
 }
 
 /* ---------------- watchdog: fix 상실 감지 + DR ---------------- */
@@ -442,7 +478,7 @@ function startWatchdog() {
         const nextIdx = S.snap.fwd ? pt.segIdx + 1 : pt.segIdx;
         const nextName = r.names[nextIdx] || '';
         const nd = Math.abs(r.cum[nextIdx] - clamp(s, 0, r.cum[r.cum.length - 1]));
-        $('snap').textContent = `DR · ${S.snap.routeId} → ${nextName} ${(nd / 1000).toFixed(1)} km`;
+        $('snap').textContent = `DR · ${S.snap.routeId} → ${nextName} ${fmtNM(nd)} NM`;
         setPill('warn', `DR 추정 ${Math.round(age)}s`);
         if (S.follow) map.easeTo({ center: [pt.lon, pt.lat], duration: 900 });
         return;
@@ -453,12 +489,21 @@ function startWatchdog() {
 }
 
 /* ---------------- 렌더 ---------------- */
+/* dart 회전: 이동 중(>8 m/s)엔 GPS course, 정지 상태에선 기기 나침반 heading */
+function resolveHeading(course) {
+  const spd = S.pos ? S.pos.spd : null;
+  if (course != null && spd != null && spd > 8) return course;
+  if (S.hdg != null) return S.hdg;
+  return course ?? 0;
+}
+
 function renderOwn(lon, lat, course, est, accM) {
+  S.lastOwn = { lon, lat, course, est, accM };
   map.getSource('own').setData({
     type: 'FeatureCollection',
     features: [{
       type: 'Feature',
-      properties: { course: course ?? 0, est: !!est },
+      properties: { course: resolveHeading(course), est: !!est },
       geometry: { type: 'Point', coordinates: [lon, lat] },
     }],
   });
@@ -544,7 +589,7 @@ function renderTrack() {
   const mm = String(Math.floor(dur / 60) % 60).padStart(2, '0');
   const hh = String(Math.floor(dur / 3600)).padStart(2, '0');
   $('trk-stats').textContent = S.track.length
-    ? `${(dist / 1000).toFixed(1)} km · ${hh}:${mm} · ${S.track.length}pt` : '';
+    ? `${fmtNM(dist)} NM · ${hh}:${mm} · ${S.track.length}pt` : '';
 }
 
 function saveTrack() {
@@ -595,8 +640,16 @@ function enableCompass() {
       else if (e.absolute && e.alpha != null) hdg = (360 - e.alpha) % 360;
       if (hdg == null) return;
       compassOn = true;
+      S.hdg = hdg;
       $('rose').setAttribute('transform', `rotate(${-hdg} 22 22)`);
       $('hdg-num').textContent = String(Math.round(hdg)).padStart(3, '0') + '°';
+      // 정지 상태면 own-ship dart도 나침반 방향으로 회전 (150ms 스로틀)
+      const now = performance.now();
+      if (S.lastOwn && (!S.pos || S.pos.spd == null || S.pos.spd <= 8)
+          && now - (enableCompass._t || 0) > 150) {
+        enableCompass._t = now;
+        renderOwn(S.lastOwn.lon, S.lastOwn.lat, S.lastOwn.course, S.lastOwn.est, S.lastOwn.accM);
+      }
     }, { passive: true });
     setTimeout(() => { if (!compassOn) toast('나침반 데이터가 없습니다 (데스크톱?)'); }, 2500);
   };
@@ -694,6 +747,9 @@ function startDemo() {
   let s = 0, lastT = performance.now();
 
   setPill('warn', 'DEMO 시작');
+  S.track = [];                     // 데모는 매 실행 새 트랙으로 시작
+  saveTrack();
+  renderTrack();
   S.recording = true;               // 데모에서는 트랙 기록 자동 시작
   $('btn-rec').classList.add('on');
   $('btn-rec').textContent = '■ REC';

@@ -32,14 +32,14 @@ body {
 #hud {
   position: fixed;
   top: 0; left: 0; right: 0;
-  padding: calc(var(--sa-t) + 8px) calc(var(--sa-r) + 10px) 8px calc(var(--sa-l) + 10px);
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: linear-gradient(rgba(10,22,32,0.92), rgba(10,22,32,0.55) 75%, transparent);
+  padding: calc(var(--sa-t) + 8px) calc(var(--sa-r) + 10px) 10px calc(var(--sa-l) + 10px);
+  display: flex; flex-direction: column; gap: 5px;
+  background: linear-gradient(rgba(10,22,32,0.92), rgba(10,22,32,0.55) 80%, transparent);
   pointer-events: none;
   z-index: 20;
 }
 #hud > * { pointer-events: auto; }
-#hud-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#hud-left { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
 .pill {
   font-size: 12px; font-weight: 700; letter-spacing: 0.4px;
   padding: 4px 9px; border-radius: 999px;
@@ -54,7 +54,7 @@ body {
   font-size: 13px; font-weight: 600; color: var(--cyan);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#hud-right { display: flex; gap: 12px; }
+#hud-right { display: flex; gap: 14px; justify-content: flex-end; }
 .metric { text-align: right; }
 .metric b {
   display: block; font-size: 17px; font-weight: 700;
@@ -111,6 +111,7 @@ body {
 #btn-rec.on { color: var(--bad); border-color: var(--bad); animation: blink 1.6s infinite; }
 @keyframes blink { 50% { opacity: 0.55; } }
 #trk-stats {
+  flex: 1; min-width: 0;
   font-size: 12px; color: var(--dim);
   font-variant-numeric: tabular-nums; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
@@ -131,10 +132,19 @@ body {
 }
 #layers-panel label { display: flex; align-items: center; gap: 9px; font-size: 14px; }
 #layers-panel input { width: 17px; height: 17px; accent-color: var(--cyan); }
+.panel-actions {
+  display: flex; gap: 8px; margin-top: 3px; padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.panel-actions button {
+  flex: 1; height: 36px; border-radius: 8px; white-space: nowrap;
+  background: #1d3242; color: var(--text); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 700;
+}
 
 /* ---------- 배너/토스트 ---------- */
 #demo-banner {
-  position: fixed; top: calc(var(--sa-t) + 54px); left: 50%;
+  position: fixed; top: calc(var(--sa-t) + 92px); left: 50%;
   transform: translateX(-50%);
   background: rgba(255,179,71,0.16); color: var(--warn);
   border: 1px solid rgba(255,179,71,0.6);
@@ -165,4 +175,10 @@ body {
 @media (min-width: 700px) {
   .metric b { font-size: 20px; }
   #snap { font-size: 15px; }
+}
+
+/* 좁은 화면 */
+@media (max-width: 520px) {
+  .metric b { font-size: 15px; }
+  #hud-right { gap: 10px; }
 }

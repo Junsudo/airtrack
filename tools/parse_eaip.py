@@ -181,7 +181,7 @@ def parse_areas(path: Path):
         if not idm:
             continue
         coords = [
-            (dms_to_dec(m.group(1), m.group(2)), dms_to_dec(m.group(3), m.group(4)))
+            (dms_to_dec(m.group(3), m.group(4)), dms_to_dec(m.group(1), m.group(2)))  # (lon, lat)
             for m in COORD_RE.finditer(text)
         ]
         aid = f"{idm.group(1)}{idm.group(2)}"
@@ -311,8 +311,10 @@ def main():
     (OUT / "airways.geojson").write_text(json.dumps(fc(aw_feats), ensure_ascii=False))
     (OUT / "fixes.geojson").write_text(json.dumps(fc(fix_feats), ensure_ascii=False))
     (OUT / "navaids.geojson").write_text(json.dumps(fc(nav_feats), ensure_ascii=False))
-    (OUT / "areas.geojson").write_text(json.dumps(fc(area_feats), ensure_ascii=False))
     (OUT / "airports.geojson").write_text(json.dumps(fc(apt_feats), ensure_ascii=False))
+    # areas.geojson과 land.geojson은 tools/from_ato.py가 ato-engine 데이터로 생성
+    # (eAIP ENR 5.1은 경계가 서술형이라 좌표 나열 파싱으로는 도형이 안 나옴)
+    _ = area_feats
 
     # ---- 검증 출력 ----
     print(f"routes: {len(aw_feats)}  fixes: {len(fix_feats)}  navaids: {len(nav_feats)}  areas: {len(area_feats)}")

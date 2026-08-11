@@ -6,8 +6,10 @@
 
 ## 기능
 
-- 항공로 차트: eAIP ENR 3.1/3.3 파싱 — RNAV/재래식 route 54개, fix 553개, en-route navaid 11개,
-  P/R/D 구역 86개(P518 포함), 공항 15개. 해안선은 Natural Earth.
+- 항공로 차트: eAIP ENR 3.1/3.3 파싱 — RNAV/재래식 route 54개(route별 색 구분), fix 553개,
+  en-route navaid 11개, 공항 15개. 거리 단위는 NM.
+- 지도·공역: ato-engine(kto.geo.json + areas/airspace) — 해안선, P73/P518(MDL 기반),
+  R/D 구역 등 199개. 훈련공역(M/A/C/I)은 LYR에서 켜는 별도 레이어.
 - GPS: 파란 dart(진행방향 회전) + 정확도 원. airway snap → "Y722 → OLMEN 18.4 km" 표시.
 - DR 폴백: fix가 5초 이상 끊기면 마지막 속도로 항공로를 따라 추정 위치를 전진(주황 dart, "DR ·" 표시).
 - 나침반: 우측 나침반 버튼 탭 → 권한 허용 → 기기 방향 표시.
@@ -59,7 +61,8 @@ for sec in ENR-3.3 ENR-3.1 ENR-4.1 ENR-4.4 ENR-5.1; do
 done
 
 # 3) GeoJSON 재생성 + SW 캐시 버전 갱신
-python3 tools/parse_eaip.py
+python3 tools/parse_eaip.py   # 항공로/fix/navaid/공항
+python3 tools/from_ato.py     # 지도/공역 (ato-engine 데이터가 바뀐 경우에만)
 # docs/sw.js 의 VERSION 문자열을 새 날짜로 바꾼 뒤 push
 ```
 
@@ -68,8 +71,9 @@ python3 tools/parse_eaip.py
 ## 구조
 
 ```
-tools/parse_eaip.py   eAIP HTML → GeoJSON 파서
-tools/clip_land.py    Natural Earth → 한국 주변 해안선 clip
+tools/parse_eaip.py   eAIP HTML → GeoJSON 파서 (항공로/fix/navaid/공항)
+tools/from_ato.py     ato-engine → 해안선(land)/공역(areas) GeoJSON
+tools/clip_land.py    (구) Natural Earth clip — from_ato.py로 대체됨
 raw/                  다운로드 원본 (gitignore)
 docs/                 배포되는 앱 전체 (GitHub Pages 소스)
   data/*.geojson      항공로/fix/navaid/구역/공항/해안선
