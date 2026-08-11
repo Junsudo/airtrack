@@ -49,12 +49,18 @@ DESIG_RE = re.compile(r"lateral limits?\s+(.{3,40}?CTR)\b", re.I)
 
 
 def civil_from_ad(arp):
-    """AD 2.17(ATS AIRSPACE) → 민항 CTR. 원 중심이 '(ARP)'로만 적힌 경우
-    airports.geojson의 공항 좌표를 중심으로 쓴다."""
+    """AD 2.17(ATS AIRSPACE) → CTR. 경계가 "centered at ARP"로만 적히면
+    같은 문서 AD 2.2의 공식 ARP 좌표를 중심으로 쓴다."""
     out = []
     for f in sorted(AD_DIR.glob("*.html")):
         icao = f.stem
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", f.read_text(encoding="utf-8", errors="replace")))
+        # 이 문서의 공식 ARP (AD 2.2)
+        ai = text.find("ARP coordinates")
+        am = COORD_RE.search(text[ai:ai + 400]) if ai >= 0 else None
+        if am:
+            arp = dict(arp)
+            arp[icao] = [dms(am.group(3), am.group(4)), dms(am.group(1), am.group(2))]
         j = text.upper().find("ATS AIRSPACE")
         if j < 0:
             continue
@@ -87,10 +93,12 @@ def civil_from_ad(arp):
             kind = "poly"
         vm = VERT2_RE.search(sec)
         km = CLASS2_RE.search(sec)
+        ex = re.search(r"[Ee]xclud\w*[^.]{0,120}", sec)
         out.append({
             "type": "Feature",
             "properties": {
-                "name": name, "kind": kind,
+                "name": name, "kind": kind, "icao": icao,
+                "note": re.sub(r"\s+", " ", ex.group(0)).strip() if ex else None,
                 "vert": (f"{vm.group(1).upper()}-{vm.group(2).strip().replace(' ', '')}ft"
                          + (vm.group(3) or "")) if vm else None,
                 "cls": km.group(1).upper() if km else None,
@@ -146,10 +154,12 @@ def main():
         seen.add(name)
         vm = VERT_RE.search(rowtext)
         km = CLASS_RE.search(rowtext)
+        ex = re.search(r"[Ee]xclud\w*[^.]{0,120}", cell)
         feats.append({
             "type": "Feature",
             "properties": {
                 "name": name, "kind": kind,
+                "note": re.sub(r"\s+", " ", ex.group(0)).strip() if ex else None,
                 "vert": (f"{vm.group(1).upper()}-{vm.group(2).strip().replace(' ', '')}ft"
                          + (vm.group(3) or "")) if vm else None,
                 "cls": km.group(1).upper() if km else None,

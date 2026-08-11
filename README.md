@@ -20,8 +20,12 @@
 - 하천: ato-engine kto.rivers (한강 등 폴리곤 49 + 지류 선) — 물색으로 육지를 파냄.
 - 군기지: ato-engine korea.py의 K-사이트 기지 + ICAO 매핑 (RKSM/RKSW/RKSO/RKTP/RKTI/RKNN,
   민항 겹침 제외). 청색 마름모.
-- 관제권(CTR) 28개: 군기지 CTR은 eAIP ENR 2.1, 민항 CTR은 각 공항 AD 2.17에서 파싱
-  (tools/parse_ctr.py). 파선 청색 원, 라벨에 명칭.
+- 관제권(CTR) 31개 = eAIP ENR 2.1이 나열한 CONTROL ZONE 전수. 군 13곳은 ENR 2.1에
+  좌표가 직접 적혀 있고, 나머지 18곳은 "See part 3 AERODROMES(AD)"라 각 공항 AD 2.17에서
+  파싱했다(tools/parse_ctr.py). 전부 반경 5 NM 원이며 중심은 해당 문서 AD 2.2의 공식 ARP.
+  라벨 뒤 `*`는 간행물이 인접 구역과의 중복 제외를 명시한 곳(Osan/Seongmu/Sokcho) —
+  원은 제외 전 전체를 그리므로 실제 경계는 그보다 작다.
+- 공항 좌표는 AD 2.2의 공식 ARP를 쓴다(하드코딩 목록은 인천 1.2km·김포 0.6km 어긋나 있었음).
 - 성능: GeoJSON 소스 maxzoom 12 + geojson-vt 줌별 단순화, 레이어별 min/maxzoom 게이트.
 - GPS: 파란 dart(진행방향 회전) + 정확도 원. airway snap → "Y722 → OLMEN 18.4 km" 표시.
 - DR 폴백: fix가 5초 이상 끊기면 마지막 속도로 항공로를 따라 추정 위치를 전진(주황 dart, "DR ·" 표시).
@@ -50,6 +54,14 @@ python3 -m http.server 8734 --directory docs
 4. 첫 실행은 온라인 상태에서(캐시 채움). 이후 비행기 모드에서 동작.
 
 위치 기능은 HTTPS 필수라 GitHub Pages 배포본으로 써야 한다(로컬 IP 접속으로는 GPS가 안 뜬다).
+
+### 갱신이 반영되지 않을 때
+
+앱은 service worker로 모든 파일을 캐시하므로 push 직후 폰에서 바로 바뀌지 않는다.
+LYR 패널의 **캐시 리셋**을 누르면 SW·캐시를 지우고 최신본을 다시 받는다.
+GitHub Pages는 `max-age=600`을 주기 때문에 SW 설치와 리셋 모두 `cache: 'reload'`로
+브라우저 HTTP 캐시를 우회하도록 해 두었다. 배포할 때는 `docs/sw.js`의 `VERSION`을
+반드시 올려야 기존 설치본이 갱신을 인지한다.
 
 ## 기내 사용 체크리스트
 

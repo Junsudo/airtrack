@@ -232,6 +232,23 @@ AIRPORTS = [
 ]
 
 
+def arp_overrides():
+    """raw/ad/*.html의 AD 2.2에서 공식 ARP 좌표를 읽어 하드코딩 값을 대체한다.
+    (하드코딩 목록은 인천 1.2km·김포 0.6km까지 어긋나 있었다.)"""
+    out = {}
+    for path in sorted((RAW / "ad").glob("*.html")):
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ",
+                                          path.read_text(encoding="utf-8", errors="replace")))
+        i = text.find("ARP coordinates")
+        if i < 0:
+            continue
+        m = COORD_RE.search(text[i:i + 400])
+        if m:
+            out[path.stem] = (dms_to_dec(m.group(3), m.group(4)),
+                              dms_to_dec(m.group(1), m.group(2)))
+    return out
+
+
 def fc(features):
     return {"type": "FeatureCollection", "features": features}
 
@@ -302,11 +319,16 @@ def main():
         "geometry": {"type": "Polygon", "coordinates": [a["poly"]]},
     } for a in areas]
 
-    apt_feats = [{
-        "type": "Feature",
-        "properties": {"icao": i, "name": n},
-        "geometry": {"type": "Point", "coordinates": [lon, lat]},
-    } for i, n, lat, lon in AIRPORTS]
+    arp = arp_overrides()
+    apt_feats = []
+    for i, n, lat, lon in AIRPORTS:
+        coord = arp.get(i, (lon, lat))
+        apt_feats.append({
+            "type": "Feature",
+            "properties": {"icao": i, "name": n, "arp": i in arp},
+            "geometry": {"type": "Point", "coordinates": [round(coord[0], 6), round(coord[1], 6)]},
+        })
+    print(f"ARP 공식좌표 적용: {sum(1 for i, *_ in AIRPORTS if i in arp)}/{len(AIRPORTS)}")
 
     (OUT / "airways.geojson").write_text(json.dumps(fc(aw_feats), ensure_ascii=False))
     (OUT / "fixes.geojson").write_text(json.dumps(fc(fix_feats), ensure_ascii=False))
