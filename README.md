@@ -14,6 +14,10 @@
   LYR에서 켜는 별도 레이어.
 - 행정경계: 시도/시군구(southkorea-maps KOSTAT) — LOD 적용(시도 z5.2+, 시군구 z7.8+,
   라벨은 더 늦게). 한글 라벨은 MapLibre local glyph 생성이라 폰트 파일 불필요.
+- 군기지: ato-engine korea.py의 K-사이트 기지 + ICAO 매핑 (RKSM/RKSW/RKSO/RKTP/RKTI/RKNN,
+  민항 겹침 제외). 청색 마름모.
+- 관제권(CTR) 28개: 군기지 CTR은 eAIP ENR 2.1, 민항 CTR은 각 공항 AD 2.17에서 파싱
+  (tools/parse_ctr.py). 파선 청색 원, 라벨에 명칭.
 - 성능: GeoJSON 소스 maxzoom 12 + geojson-vt 줌별 단순화, 레이어별 min/maxzoom 게이트.
 - GPS: 파란 dart(진행방향 회전) + 정확도 원. airway snap → "Y722 → OLMEN 18.4 km" 표시.
 - DR 폴백: fix가 5초 이상 끊기면 마지막 속도로 항공로를 따라 추정 위치를 전진(주황 dart, "DR ·" 표시).

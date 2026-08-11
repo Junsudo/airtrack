@@ -85,9 +85,52 @@ def areas():
     return feats
 
 
+# ato-engine korea.py의 K-사이트 → ICAO. 민항 공항(airports.geojson 기존 항목)과
+# 겹치는 기지는 건너뛰고 순수 군기지만 추가한다.
+K_TO_ICAO = {
+    "K-1": "RKPK", "K-2": "RKTN", "K-8": "RKJK", "K-13": "RKSW",
+    "K-16": "RKSM", "K-18": "RKNN", "K-46": "RKNW", "K-55": "RKSO",
+    "K-57": "RKJJ", "K-59": "RKTU", "K-75": "RKTI", "K-77": "RKTP",
+}
+AB_RE = __import__("re").compile(
+    r'AirBase\("(K-\d+)",\s*"([^"]+)",\s*\w+,\s*([\d.]+),\s*([\d.]+),\s*"(ROK|US)"')
+
+
+def mil_airbases():
+    src = (ATO / "atoengine" / "korea.py").read_text()
+    out = []
+    for m in AB_RE.finditer(src):
+        k, name, lat, lon, _nation = m.groups()
+        icao = K_TO_ICAO.get(k)
+        if icao is None:
+            continue
+        out.append({"icao": icao, "name": name, "lat": float(lat), "lon": float(lon)})
+    return out
+
+
+def merge_airports():
+    path = OUT / "airports.geojson"
+    fc = json.loads(path.read_text())
+    have = {f["properties"]["icao"] for f in fc["features"]}
+    added = []
+    for ab in mil_airbases():
+        if ab["icao"] in have:
+            continue
+        have.add(ab["icao"])
+        fc["features"].append({
+            "type": "Feature",
+            "properties": {"icao": ab["icao"], "name": ab["name"], "mil": True},
+            "geometry": {"type": "Point", "coordinates": [ab["lon"], ab["lat"]]},
+        })
+        added.append(ab["icao"])
+    path.write_text(json.dumps(fc, ensure_ascii=False))
+    print(f"airports: +{len(added)} mil {added}, total {len(fc['features'])}")
+
+
 def main():
     lf = land()
     af = areas()
+    merge_airports()
     (OUT / "land.geojson").write_text(json.dumps(
         {"type": "FeatureCollection", "features": lf}, ensure_ascii=False))
     (OUT / "areas.geojson").write_text(json.dumps(

@@ -67,7 +67,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -185,6 +185,24 @@ function addIcons() {
     ctx.fillStyle = COLORS.airport;
     ctx.fill();
   });
+  // 군기지: 마름모 (색은 ato-engine NATC.ROK #3d9bff)
+  const aptMil = drawIcon(15, (ctx, s) => {
+    const cx = s / 2, cy = s / 2, r = s / 2 - 2.6;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = '#3d9bff';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 1.7, 0, 7);
+    ctx.fillStyle = '#3d9bff';
+    ctx.fill();
+  });
+  map.addImage('apt-mil', aptMil.img, { pixelRatio: aptMil.ratio });
   const o = dart(COLORS.own), e = dart(COLORS.ownEst);
   map.addImage('own', o.img, { pixelRatio: o.ratio });
   map.addImage('own-est', e.img, { pixelRatio: e.ratio });
@@ -232,6 +250,7 @@ function addLayers() {
   map.addSource('fixes', { type: 'geojson', data: DATA.fixes });
   map.addSource('navaids', { type: 'geojson', data: DATA.navaids });
   map.addSource('airports', { type: 'geojson', data: DATA.airports });
+  map.addSource('ctr', { type: 'geojson', data: DATA.ctr });
   map.addSource('track', { type: 'geojson', data: emptyFC() });
   map.addSource('own', { type: 'geojson', data: emptyFC() });
   map.addSource('acc', { type: 'geojson', data: emptyFC() });
@@ -368,16 +387,30 @@ function addLayers() {
     },
     paint: { 'text-color': COLORS.navaid, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
   });
+  const isMil = ['==', ['get', 'mil'], true];
   map.addLayer({
     id: 'airports', type: 'symbol', source: 'airports', minzoom: 5.0,
     layout: {
-      'icon-image': 'apt-ring', 'icon-allow-overlap': true,
+      'icon-image': ['case', isMil, 'apt-mil', 'apt-ring'], 'icon-allow-overlap': true,
       'text-field': ['get', 'icao'], 'text-font': FONT, 'text-size': 10,
       'text-offset': [0, 1.0], 'text-anchor': 'top', 'text-optional': true,
     },
-    paint: { 'text-color': COLORS.airport, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
+    paint: {
+      'text-color': ['case', isMil, '#3d9bff', COLORS.airport],
+      'text-halo-color': COLORS.bg, 'text-halo-width': 1.4,
+    },
   });
 
+  // 관제권(CTR): 차트 관례대로 파선 청색 링. 반경 5NM이라 확대해야 의미 있음.
+  map.addLayer({
+    id: 'ctr-line', type: 'line', source: 'ctr', minzoom: 6.6,
+    paint: { 'line-color': '#3d9bff', 'line-opacity': 0.6, 'line-width': 1, 'line-dasharray': [5, 3] },
+  });
+  map.addLayer({
+    id: 'ctr-label', type: 'symbol', source: 'ctr', minzoom: 8.2,
+    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9 },
+    paint: { 'text-color': '#3d9bff', 'text-opacity': 0.75, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+  });
   map.addLayer({
     id: 'acc', type: 'fill', source: 'acc',
     paint: { 'fill-color': COLORS.own, 'fill-opacity': 0.08 },
@@ -409,6 +442,7 @@ const LAYER_GROUPS = {
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
   airports: ['airports'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
+  ctr: ['ctr-line', 'ctr-label'],
   track: ['track-glow', 'track'],
 };
 
