@@ -460,14 +460,15 @@ function addLayers() {
   });
 
   // 관제권(CTR): 차트 관례대로 파선 청색 링. 반경 5NM이라 확대해야 의미 있음.
+  // CTR: 흰 파선 — 이 차트에서 선으로 안 쓰는 유일한 색이라 어느 구역에서도 묻히지 않음
   map.addLayer({
     id: 'ctr-line', type: 'line', source: 'ctr', minzoom: 6.4,
-    paint: { 'line-color': '#5cc8ff', 'line-opacity': 0.95, 'line-width': 1.6, 'line-dasharray': [5, 3] },
+    paint: { 'line-color': '#eef6ff', 'line-opacity': 0.9, 'line-width': 1.5, 'line-dasharray': [5, 3] },
   });
   map.addLayer({
     id: 'ctr-label', type: 'symbol', source: 'ctr', minzoom: 7.8,
     layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9.5 },
-    paint: { 'text-color': '#5cc8ff', 'text-opacity': 1, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
+    paint: { 'text-color': '#eef6ff', 'text-opacity': 0.95, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
   });
   map.addLayer({
     id: 'acc', type: 'fill', source: 'acc',
