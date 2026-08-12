@@ -67,7 +67,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -252,6 +252,8 @@ function addLayers() {
   map.addSource('navaids', { type: 'geojson', data: DATA.navaids });
   map.addSource('airports', { type: 'geojson', data: DATA.airports });
   map.addSource('ctr', { type: 'geojson', data: DATA.ctr });
+  map.addSource('tma', { ...big, data: DATA.tma });
+  map.addSource('fir', { type: 'geojson', data: DATA.fir });
   map.addSource('track', { type: 'geojson', data: emptyFC() });
   map.addSource('own', { type: 'geojson', data: emptyFC() });
   map.addSource('acc', { type: 'geojson', data: emptyFC() });
@@ -432,6 +434,31 @@ function addLayers() {
     },
   });
 
+  // 인천 FIR 경계: 차트 외곽 프레임. 항상 표시.
+  map.addLayer({
+    id: 'fir-line', type: 'line', source: 'fir',
+    paint: { 'line-color': '#7d9ec4', 'line-width': 1.8, 'line-opacity': 0.8, 'line-dasharray': [7, 3, 2, 3] },
+  });
+  map.addLayer({
+    id: 'fir-label', type: 'symbol', source: 'fir',
+    layout: {
+      'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': FONT,
+      'text-size': 10.5, 'symbol-spacing': 480, 'text-letter-spacing': 0.15,
+    },
+    paint: { 'text-color': '#7d9ec4', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.5 },
+  });
+
+  // TMA(접근관제구역) 섹터: 얇은 실선. 상승·강하 중 지나는 공역.
+  map.addLayer({
+    id: 'tma-line', type: 'line', source: 'tma', minzoom: 6.0,
+    paint: { 'line-color': '#5a8fd0', 'line-width': 0.9, 'line-opacity': 0.5 },
+  });
+  map.addLayer({
+    id: 'tma-label', type: 'symbol', source: 'tma', minzoom: 7.6,
+    layout: { 'text-field': ['get', 'sector'], 'text-font': FONT, 'text-size': 9 },
+    paint: { 'text-color': '#5a8fd0', 'text-opacity': 0.8, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+  });
+
   // 관제권(CTR): 차트 관례대로 파선 청색 링. 반경 5NM이라 확대해야 의미 있음.
   map.addLayer({
     id: 'ctr-line', type: 'line', source: 'ctr', minzoom: 6.6,
@@ -474,6 +501,7 @@ const LAYER_GROUPS = {
   airports: ['airports'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label'],
+  tma: ['tma-line', 'tma-label'],
   track: ['track-glow', 'track'],
 };
 
