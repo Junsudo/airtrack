@@ -451,23 +451,23 @@ function addLayers() {
   // TMA(접근관제구역) 섹터: 얇은 실선. 상승·강하 중 지나는 공역.
   map.addLayer({
     id: 'tma-line', type: 'line', source: 'tma', minzoom: 6.0,
-    paint: { 'line-color': '#5a8fd0', 'line-width': 0.9, 'line-opacity': 0.5 },
+    paint: { 'line-color': '#8fb4f0', 'line-width': 1.2, 'line-opacity': 0.8 },
   });
   map.addLayer({
     id: 'tma-label', type: 'symbol', source: 'tma', minzoom: 7.6,
-    layout: { 'text-field': ['get', 'sector'], 'text-font': FONT, 'text-size': 9 },
-    paint: { 'text-color': '#5a8fd0', 'text-opacity': 0.8, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    layout: { 'text-field': ['get', 'sector'], 'text-font': FONT, 'text-size': 9.5 },
+    paint: { 'text-color': '#8fb4f0', 'text-opacity': 0.95, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
   });
 
   // 관제권(CTR): 차트 관례대로 파선 청색 링. 반경 5NM이라 확대해야 의미 있음.
   map.addLayer({
-    id: 'ctr-line', type: 'line', source: 'ctr', minzoom: 6.6,
-    paint: { 'line-color': '#3d9bff', 'line-opacity': 0.6, 'line-width': 1, 'line-dasharray': [5, 3] },
+    id: 'ctr-line', type: 'line', source: 'ctr', minzoom: 6.4,
+    paint: { 'line-color': '#5cc8ff', 'line-opacity': 0.95, 'line-width': 1.6, 'line-dasharray': [5, 3] },
   });
   map.addLayer({
-    id: 'ctr-label', type: 'symbol', source: 'ctr', minzoom: 8.2,
-    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9 },
-    paint: { 'text-color': '#3d9bff', 'text-opacity': 0.75, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.2 },
+    id: 'ctr-label', type: 'symbol', source: 'ctr', minzoom: 7.8,
+    layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9.5 },
+    paint: { 'text-color': '#5cc8ff', 'text-opacity': 1, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
   });
   map.addLayer({
     id: 'acc', type: 'fill', source: 'acc',
