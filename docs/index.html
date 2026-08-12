@@ -26,7 +26,7 @@
   <div id="hud-right">
     <span class="metric"><b id="m-gs">—</b><small>GS kt</small></span>
     <span class="metric"><b id="m-alt">—</b><small>ALT ft</small></span>
-    <span class="metric"><b id="m-trk">—</b><small>TRK°</small></span>
+    <span class="metric"><b id="m-trk">—</b><small>TRK°M</small></span>
   </div>
 </header>
 
@@ -34,17 +34,6 @@
   <button id="btn-zi" aria-label="확대">+</button>
   <button id="btn-zo" aria-label="축소">−</button>
   <button id="btn-follow" class="on" aria-label="내 위치 따라가기" title="follow">◎</button>
-  <div id="compass" role="button" aria-label="나침반 켜기" title="나침반">
-    <svg viewBox="0 0 44 44">
-      <g id="rose">
-        <circle cx="22" cy="22" r="17" fill="none" stroke="#2c4356" stroke-width="1.5"/>
-        <polygon points="22,7 25,22 22,20 19,22" fill="#ff5c5c"/>
-        <polygon points="22,37 25,22 22,24 19,22" fill="#7f9bb0"/>
-        <text x="22" y="5.5" text-anchor="middle" font-size="6" fill="#cfe3ee" font-weight="700">N</text>
-      </g>
-    </svg>
-    <div class="hdg-num" id="hdg-num">--</div>
-  </div>
 </div>
 
 <footer id="bottombar">

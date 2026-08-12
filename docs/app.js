@@ -680,10 +680,22 @@ function renderOwn(lon, lat, course, est, accM) {
   }
 }
 
+/* 자편각(서편, 도). eAIP ENR 4.1의 VOR 변각(제주·부산 7°W ~ 강원 9°W)을
+ * 위도로 보간한 근사 — GPS course(진북)를 항공 관례인 자방위로 바꿀 때 사용. */
+function magDecl(lat) {
+  return 7 + clamp(((lat ?? 36) - 35.5) * 0.8, 0, 2.5);
+}
+
 function updateHUD(spd, alt, course) {
   $('m-gs').textContent = spd != null ? Math.round(spd * 1.9438) : '—';
   $('m-alt').textContent = alt != null ? Math.round(alt * 3.2808).toLocaleString() : '—';
-  $('m-trk').textContent = course != null ? String(Math.round(course)).padStart(3, '0') : '—';
+  if (course != null) {
+    const lat = (S.pos && S.pos.lat) ?? (S.est && S.est.lat);
+    const mag = (course + magDecl(lat)) % 360;
+    $('m-trk').textContent = String(Math.round(mag)).padStart(3, '0');
+  } else {
+    $('m-trk').textContent = '—';
+  }
 }
 
 /* iOS는 위성 개수를 앱에 노출하지 않는다(웹·네이티브 공통). 대신 관측 가능한
@@ -806,7 +818,6 @@ function exportGPX() {
 }
 
 /* ---------------- 나침반 ---------------- */
-let compassOn = false;
 function enableCompass() {
   const attach = () => {
     window.addEventListener('deviceorientation', (e) => {
@@ -814,11 +825,8 @@ function enableCompass() {
       if (typeof e.webkitCompassHeading === 'number') hdg = e.webkitCompassHeading;
       else if (e.absolute && e.alpha != null) hdg = (360 - e.alpha) % 360;
       if (hdg == null) return;
-      compassOn = true;
       S.hdg = hdg;
-      $('rose').setAttribute('transform', `rotate(${-hdg} 22 22)`);
-      $('hdg-num').textContent = String(Math.round(hdg)).padStart(3, '0') + '°';
-      // 정지 상태면 own-ship dart도 나침반 방향으로 회전 (150ms 스로틀)
+      // 정지 상태면 own-ship dart를 나침반 방향으로 회전 (150ms 스로틀)
       const now = performance.now();
       if (S.lastOwn && (!S.pos || S.pos.spd == null || S.pos.spd <= 8)
           && now - (enableCompass._t || 0) > 150) {
@@ -826,14 +834,27 @@ function enableCompass() {
         renderOwn(S.lastOwn.lon, S.lastOwn.lat, S.lastOwn.course, S.lastOwn.est, S.lastOwn.accM);
       }
     }, { passive: true });
-    setTimeout(() => { if (!compassOn) toast('나침반 데이터가 없습니다 (데스크톱?)'); }, 2500);
   };
   if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
     DeviceOrientationEvent.requestPermission()
       .then((st) => { if (st === 'granted') attach(); else toast('나침반 권한이 거부되었습니다'); })
-      .catch(() => toast('나침반 권한 요청 실패'));
+      .catch(() => { /* 제스처 밖 호출 등 — 조용히 무시 */ });
   } else {
     attach();
+  }
+}
+
+/* iOS는 orientation 권한을 사용자 제스처에서만 요청할 수 있다.
+ * 앱 실행 후 첫 터치가 곧 요청 제스처가 되도록 건다 (사실상 시작 즉시). */
+function armCompassAutoRequest() {
+  if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+    const once = () => {
+      document.removeEventListener('pointerdown', once);
+      enableCompass();
+    };
+    document.addEventListener('pointerdown', once);
+  } else {
+    enableCompass();
   }
 }
 
@@ -875,7 +896,7 @@ function bindUI() {
   };
   map.on('dragstart', () => { S.follow = false; $('btn-follow').classList.remove('on'); });
 
-  $('compass').onclick = enableCompass;
+  armCompassAutoRequest();
   $('btn-wake').onclick = toggleWake;
 
   $('btn-rec').onclick = () => {
