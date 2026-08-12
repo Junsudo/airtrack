@@ -449,14 +449,16 @@ function addLayers() {
   });
 
   // TMA(접근관제구역) 섹터: 얇은 실선. 상승·강하 중 지나는 공역.
+  // TMA: 앰버 실선 — 청색 계열(항로·경계·D구역)과 겹치지 않는 남은 슬롯.
+  // CTR(흰 파선)과의 위계: 흰색 = 타워, 앰버 = 어프로치.
   map.addLayer({
     id: 'tma-line', type: 'line', source: 'tma', minzoom: 6.0,
-    paint: { 'line-color': '#8fb4f0', 'line-width': 1.2, 'line-opacity': 0.8 },
+    paint: { 'line-color': '#ffd166', 'line-width': 1.2, 'line-opacity': 0.75 },
   });
   map.addLayer({
     id: 'tma-label', type: 'symbol', source: 'tma', minzoom: 7.6,
     layout: { 'text-field': ['get', 'sector'], 'text-font': FONT, 'text-size': 9.5 },
-    paint: { 'text-color': '#8fb4f0', 'text-opacity': 0.95, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
+    paint: { 'text-color': '#ffd166', 'text-opacity': 0.95, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
   });
 
   // 관제권(CTR): 차트 관례대로 파선 청색 링. 반경 5NM이라 확대해야 의미 있음.
