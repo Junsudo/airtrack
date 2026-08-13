@@ -85,8 +85,20 @@ def parse_routes(path: Path):
             if existing is not None:
                 cur = existing
                 continue
-            cur = {"id": desig, "type": rtype, "points": []}
+            cur = {"id": desig, "type": rtype, "points": [], "segdirs": []}
             routes.append(cur)
+            continue
+        if "Table-row-type-3" in cls and cur is not None:
+            # 순항고도 방향 서브컬럼(↓=표 순서 방향, ↑=역방향). 한쪽에만 Odd/Even이
+            # 배정된 항로는 단방향이다 (예: Y711 ↓Even = 남행 전용, Y722 ↑Odd = 북행 전용).
+            tds3 = tr.find_all("td", recursive=False)
+            ual = [k for k, td in enumerate(tds3) if td.find("div", class_="UpperAndLower")]
+            if len(ual) >= 2 and ual[1] + 2 < len(tds3):
+                k = ual[1]
+                fwd = tds3[k + 1].get_text(" ")
+                rev = tds3[k + 2].get_text(" ")
+                cur["segdirs"].append((bool(re.search(r"Odd|Even", fwd)),
+                                       bool(re.search(r"Odd|Even", rev))))
             continue
         if "Table-row-type-2" in cls and cur is not None:
             tds = tr.find_all("td")
@@ -264,11 +276,16 @@ def main():
     # airways.geojson
     aw_feats = []
     for r in routes:
+        segdirs = r.get("segdirs", [])
+        f_any = any(f for f, _ in segdirs)
+        r_any = any(v for _, v in segdirs)
+        rdir = "both" if (f_any and r_any) or not segdirs else ("fwd" if f_any else ("rev" if r_any else "both"))
         aw_feats.append({
             "type": "Feature",
             "properties": {
                 "id": r["id"],
                 "type": r["type"],
+                "dir": rdir,
                 "fixes": [p["ident"] or p["name"] for p in r["points"]],
             },
             "geometry": {
@@ -340,6 +357,10 @@ def main():
 
     # ---- 검증 출력 ----
     print(f"routes: {len(aw_feats)}  fixes: {len(fix_feats)}  navaids: {len(nav_feats)}  areas: {len(area_feats)}")
+    from collections import Counter
+    print("  방향:", dict(Counter(f["properties"]["dir"] for f in aw_feats)),
+          "| Y711:", next(f["properties"]["dir"] for f in aw_feats if f["properties"]["id"] == "Y711"),
+          "Y722:", next(f["properties"]["dir"] for f in aw_feats if f["properties"]["id"] == "Y722"))
     bad = []
     for feat in aw_feats:
         for lon, lat in feat["geometry"]["coordinates"]:

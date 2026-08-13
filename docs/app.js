@@ -1132,11 +1132,13 @@ function buildGraph() {
   };
   for (const f of DATA.airways.features) {
     const cs = f.geometry.coordinates;
+    // ENR 3.3 순항고도 방향 컬럼 기준 단방향 항로 반영 (fwd=fix 순서 방향, rev=역방향)
+    const dir = f.properties.dir || 'both';
     for (let i = 0; i < cs.length - 1; i++) {
       const a = getNode(cs[i]), b = getNode(cs[i + 1]);
       const w = distM(cs[i][0], cs[i][1], cs[i + 1][0], cs[i + 1][1]);
-      nodes.get(a).adj.push({ key: b, w });
-      nodes.get(b).adj.push({ key: a, w });
+      if (dir !== 'rev') nodes.get(a).adj.push({ key: b, w });
+      if (dir !== 'fwd') nodes.get(b).adj.push({ key: a, w });
     }
   }
   graph = nodes;
@@ -1276,14 +1278,15 @@ async function lookupCallsign(cs) {
 }
 
 /* ---------------- 데모 모드 (?demo=1) ----------------
- * Y722를 따라 김포권(SOT)→제주까지 가상 비행. 실제 GPS 파이프라인(handleFix)에
+ * Y711(남행 코리도)을 따라 김포권→제주까지 가상 비행. 실제 GPS 파이프라인(handleFix)에
  * 합성 fix를 흘려보낸다. 진행률 42~58% 구간은 fix를 끊어 jamming 상황을 재현
  * → watchdog의 DR 추정이 자동으로 이어받는 것을 확인할 수 있다.
  */
 function startDemo() {
-  const y722 = routesById['Y722'];
-  if (!y722) { toast('데모: Y722 데이터 없음'); return; }
-  const coords = y722.coords.filter((c) => c[1] >= 33.3);
+  // 남행 데모 — 방향 지정상 남행 코리도는 Y711 (Y722는 북행 전용)
+  const y711 = routesById['Y711'];
+  if (!y711) { toast('데모: Y711 데이터 없음'); return; }
+  const coords = y711.coords.filter((c) => c[1] >= 33.3);
   coords.push([126.493, 33.5113]); // RKPC
   const cum = cumdist(coords);
   const total = cum[cum.length - 1];
