@@ -1,5 +1,5 @@
 /* AIRTRACK service worker — cache-first 완전 오프라인 */
-const VERSION = 'airtrack-v18-airac-2026-08-05';
+const VERSION = 'airtrack-v19-airac-2026-08-05';
 const ASSETS = [
   './',
   './index.html',

@@ -472,6 +472,9 @@ function addLayers() {
     layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 9.5 },
     paint: { 'text-color': '#eef6ff', 'text-opacity': 0.95, 'text-halo-color': COLORS.bg, 'text-halo-width': 1.4 },
   });
+  // 탭 판정용 투명 fill (opacity 0이어도 queryRenderedFeatures에는 잡힘)
+  map.addLayer({ id: 'tma-hit', type: 'fill', source: 'tma', minzoom: 6.0, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
+  map.addLayer({ id: 'ctr-hit', type: 'fill', source: 'ctr', minzoom: 6.4, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
   map.addLayer({
     id: 'acc', type: 'fill', source: 'acc',
     paint: { 'fill-color': COLORS.own, 'fill-opacity': 0.08 },
@@ -503,8 +506,8 @@ const LAYER_GROUPS = {
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
   airports: ['airports'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
-  ctr: ['ctr-line', 'ctr-label'],
-  tma: ['tma-line', 'tma-label'],
+  ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
+  tma: ['tma-line', 'tma-label', 'tma-hit'],
   track: ['track-glow', 'track'],
 };
 
@@ -721,6 +724,68 @@ function setPill(cls, text) {
   el.textContent = text;
 }
 
+/* ---------------- 탭 정보 패널 ---------------- */
+const CLS_KO = { P: '금지', R: '제한', D: '위험', A: '경보', M: '군 운용(MOA)', C: '민간훈련(CATA)', I: 'ACMI' };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function parseMaybe(v) {
+  if (typeof v !== 'string') return v;
+  try { return JSON.parse(v); } catch (e) { return v; }
+}
+
+function infoEntries(hits) {
+  const out = [], seen = new Set();
+  for (const f of hits) {
+    const p = f.properties;
+    let key, html;
+    if (f.layer.id === 'ctr-hit') {
+      key = 'ctr:' + p.name;
+      html = `<div class="info-item"><span class="tag" style="color:#eef6ff;border:1px solid #eef6ff55">CTR</span>`
+        + `<b>${esc(p.name)}</b><small>Class ${esc(p.cls || '—')} · ${esc(p.vert || '')}`
+        + `${p.note ? `<span class="dim"> · ${esc(p.note)}</span>` : ''}</small></div>`;
+    } else if (f.layer.id === 'tma-hit') {
+      key = 'tma:' + p.sector;
+      const vols = parseMaybe(p.volumes) || [];
+      const rows = vols.map((v) =>
+        `<div class="freq-row"><span>${esc(v.tma)} TMA</span><span>${esc(v.vert || '')}${v.cls ? ' · ' + esc(v.cls) : ''}</span></div>`
+      ).join('');
+      html = `<div class="info-item"><span class="tag" style="color:#ffd166;border:1px solid #ffd16655">TMA</span>`
+        + `<b>${esc(p.sector)}</b>${rows ? `<small>${rows}</small>` : ''}</div>`;
+    } else if (f.layer.id === 'areas-fill' || f.layer.id === 'areas2-fill') {
+      key = 'area:' + p.id;
+      const color = CHARTC[p.cls] || CHARTC.D;
+      html = `<div class="info-item"><span class="tag" style="color:${color};border:1px solid ${color}55">${esc(p.cls)}</span>`
+        + `<b>${esc(p.id)}</b><small>${p.name && p.name !== p.id ? esc(p.name) + ' · ' : ''}${CLS_KO[p.cls] || ''}구역</small></div>`;
+    } else if (f.layer.id === 'fir-line' || f.layer.id === 'fir-label') {
+      key = 'fir';
+      html = firInfoHTML();
+    } else {
+      continue;
+    }
+    if (!seen.has(key)) { seen.add(key); out.push(html); }
+  }
+  return out;
+}
+
+function firInfoHTML() {
+  const units = (DATA.fir.features[0].properties.units || []).filter((u) => u.sectors.length);
+  const blocks = units.map((u) => {
+    const rows = u.sectors.map((s) =>
+      `<div class="freq-row"><span>${esc(s.name)}</span><span>${esc(s.freqs.join(' '))}</span></div>`).join('');
+    const common = u.common
+      ? `<div class="freq-row"><span class="dim">COMMON</span><span>${esc(u.common.join(' '))}</span></div>` : '';
+    return `<b>${esc(u.callsign)}</b><small>${rows}${common}</small>`;
+  }).join('<div style="height:7px"></div>');
+  return `<div class="info-item"><span class="tag" style="color:#7d9ec4;border:1px solid #7d9ec455">FIR</span>`
+    + `<b>INCHEON FIR</b><small class="dim">섹터 주파수 (MHz)</small><div style="height:4px"></div>${blocks}</div>`;
+}
+
+function showInfo(htmls) {
+  $('info-body').innerHTML = htmls.join('');
+  $('info-panel').hidden = false;
+}
+function hideInfo() { $('info-panel').hidden = true; }
+
 let toastTimer;
 function toast(msg) {
   const el = $('toast');
@@ -894,7 +959,22 @@ function bindUI() {
     const p = S.est || S.pos;
     if (S.follow && p) map.easeTo({ center: [p.lon, p.lat] });
   };
-  map.on('dragstart', () => { S.follow = false; $('btn-follow').classList.remove('on'); });
+  map.on('dragstart', () => { S.follow = false; $('btn-follow').classList.remove('on'); hideInfo(); });
+
+  // 공역 탭 → 그 지점에 겹친 CTR/TMA/구역, FIR 선 탭 → 섹터 주파수
+  $('info-close').onclick = hideInfo;
+  map.on('click', (e) => {
+    const pad = 6;
+    const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
+    let hits = [];
+    try {
+      hits = map.queryRenderedFeatures(box, {
+        layers: ['ctr-hit', 'tma-hit', 'areas-fill', 'areas2-fill', 'fir-line', 'fir-label'],
+      });
+    } catch (err) { /* 레이어 미로딩 등 */ }
+    const htmls = infoEntries(hits);
+    if (htmls.length) showInfo(htmls); else hideInfo();
+  });
 
   armCompassAutoRequest();
   $('btn-wake').onclick = toggleWake;

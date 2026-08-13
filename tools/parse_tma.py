@@ -132,6 +132,48 @@ def parse_tma():
     return feats
 
 
+FREQLINE = re.compile(r"^\d{3}\.\d{1,3}(?:\s*,\s*\d{3}\.\d{1,3})*$")
+
+
+def parse_acc_sectors(html):
+    """§1.1의 관제기관별 섹터 주파수. eAIP 표는 '주파수 줄' 다음 '/ 섹터명' 줄이
+    한 항목이다 (주파수가 '뒤에 오는' 섹터 소속 — HTML <p> 줄 구조로 확정)."""
+    fir_i = html.find("Incheon FIR")
+    fir_j = html.find("1.2", fir_i)
+    seg = html[fir_i:fir_j if fir_j > fir_i else fir_i + 20000]
+    lines = [re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1))).strip()
+             for m in re.finditer(r"<p[^>]*>(.*?)</p>", seg, re.S)]
+    lines = [l for l in lines if l]
+    units, cur = [], None
+    k = 0
+    while k < len(lines):
+        l = lines[k]
+        um = re.match(r"(Daegu ACC|Incheon ACC|Daegu FIC)$", l)
+        if um:
+            cur = {"unit": um.group(1), "callsign": None, "sectors": [], "common": None, "emerg": None}
+            units.append(cur)
+            k += 1
+            continue
+        if cur is not None:
+            if cur["callsign"] is None and re.match(r"(Daegu|Incheon) (Control|Information)$", l):
+                cur["callsign"] = l
+            elif FREQLINE.match(l) and k + 1 < len(lines) and lines[k + 1].startswith("/"):
+                name = lines[k + 1].lstrip("/ ").strip()
+                freqs = [f.strip() for f in l.split(",")]
+                if name.upper() == "EMERG":
+                    cur["emerg"] = freqs
+                else:
+                    cur["sectors"].append({"name": re.sub(r"\s*Sector$", "", name), "freqs": freqs})
+                k += 2
+                continue
+            elif l.startswith("COMMON"):
+                cm = re.search(r":\s*([\d., ]+)$", l)
+                if cm:
+                    cur["common"] = [f.strip() for f in cm.group(1).split(",") if f.strip()]
+        k += 1
+    return [u for u in units if u["sectors"] or u["callsign"]]
+
+
 def parse_fir():
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ",
                                       SRC.read_text(encoding="utf-8", errors="replace")))
@@ -152,7 +194,10 @@ def parse_fir():
     ring = [p for i, p in enumerate(ring) if i == 0 or p != ring[i - 1]]  # 연속 중복점 제거
     return {
         "type": "Feature",
-        "properties": {"name": "INCHEON FIR"},
+        "properties": {
+            "name": "INCHEON FIR",
+            "units": parse_acc_sectors(SRC.read_text(encoding="utf-8", errors="replace")),
+        },
         "geometry": {"type": "LineString", "coordinates": ring},
     }
 
