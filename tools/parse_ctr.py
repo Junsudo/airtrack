@@ -69,10 +69,15 @@ def civil_from_ad(arp):
         name = (dm.group(1).strip().title().replace(' Ctr', ' CTR') if dm else f"{icao} CTR")
         rm = RADIUS_RE.search(sec)
         cm = COORD_RE.search(sec[:400])
+        # "centered on ARP"면 ARP 우선 — 뒤에 확장구역(**) 좌표가 붙은 페이지(울진)에서
+        # 첫 좌표를 중심으로 오인하면 원이 수 km 어긋난다.
+        on_arp = re.search(r"cent(?:er|re)e?d?\s+(?:at|on)\s+\(?\s*ARP", sec, re.I)
         ring = None
         if rm:
             r_nm = float(rm.group(1) or rm.group(2))
-            if cm:
+            if on_arp and icao in arp:
+                lon, lat = arp[icao]
+            elif cm:
                 lat = dms(cm.group(1), cm.group(2))
                 lon = dms(cm.group(3), cm.group(4))
             elif icao in arp:
@@ -153,11 +158,13 @@ CTR_AIRFIELDS = {
     "Mokpo CTR": ("RKJM", True), "Pyeongtaek CTR": ("RKSG", True),
     "Sokcho CTR": ("RKND", True), "Yecheon CTR": ("RKTY", True),
     "Uljin CTR": ("RKTL", False), "Jeongseok CTR": ("RKPD", False),
-    "Icheon CTR": (None, True), "Nonsan CTR": (None, True),
+    # 이천 G-510 = RKRN (OurAirports gps_code + OSM icao 태그 일치; 구자료엔 RKGA),
+    # 논산 G-536 = RKUL (OurAirports + 군용비행장 코드표 이중 확인)
+    "Icheon CTR": ("RKRN", True), "Nonsan CTR": ("RKUL", True),
 }
 
 
-def augment_airports(ctr_feats):
+def augment_airports(ctr_feats, arp):
     path = ROOT / "docs" / "data" / "airports.geojson"
     fc = json.loads(path.read_text())
     have = {f["properties"].get("icao") for f in fc["features"]}
@@ -171,10 +178,13 @@ def augment_airports(ctr_feats):
         base = name[:-4].strip()          # "Seongmu CTR" → "Seongmu"
         if (icao and icao in have) or base in have:
             continue
-        ring = f["geometry"]["coordinates"][0]
-        n = len(ring) - 1 or 1
-        center = [round(sum(p[0] for p in ring[:n]) / n, 6),
-                  round(sum(p[1] for p in ring[:n]) / n, 6)]
+        if icao and icao in arp:      # AD 페이지가 있으면 공식 ARP를 심벌 위치로
+            center = [round(arp[icao][0], 6), round(arp[icao][1], 6)]
+        else:
+            ring = f["geometry"]["coordinates"][0]
+            n = len(ring) - 1 or 1
+            center = [round(sum(p[0] for p in ring[:n]) / n, 6),
+                      round(sum(p[1] for p in ring[:n]) / n, 6)]
         fc["features"].append({
             "type": "Feature",
             "properties": {"icao": icao, "name": base.upper(), "mil": mil},
@@ -246,7 +256,7 @@ def main():
     clipped = apply_exclusions(feats)
     DST.write_text(json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False))
     print(f"ctr: {len(feats)} zones, {DST.stat().st_size} bytes | 제외 반영: {clipped}")
-    augment_airports(feats)
+    augment_airports(feats, arp)
     for f in feats:
         p = f["properties"]
         print(f"  {p['name']:<28} {p['kind']:<6} {p['vert']} {p['cls']}")

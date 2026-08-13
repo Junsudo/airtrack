@@ -103,7 +103,7 @@ MIL_BASES = {
     "RKTE": (36.5681, 127.5000), "RKTY": (36.6317, 128.3550),
     "RKPE": (35.1447, 128.6942), "RKJM": (34.7589, 126.3811),
     "RKSG": (36.9600, 127.0333), "RKND": (38.1442, 128.6028),
-    "Icheon": (37.2011, 127.4719), "Nonsan": (36.2694, 127.1139),
+    "RKRN": (37.2011, 127.4719), "RKUL": (36.2694, 127.1139),
 }
 
 
@@ -163,7 +163,8 @@ def main():
     for f in feats:
         p = f["properties"]
         if p["icao"] in ("RKSS", "RKSI", "RKPC") or p["src"] != "eaip":
-            a, b = f["geometry"]["coordinates"]
+            cs = f["geometry"]["coordinates"]
+            a, b = cs[0], cs[-1]
             L = math.hypot((b[0]-a[0])*math.cos(math.radians(a[1]))*111320, (b[1]-a[1])*111320)
             print(f"  {p['icao']} {p['rwy']:<8} brg={p['brg']:<7} 공칭 {p['len_m']}m 실측 {L:.0f}m [{p['src']}]")
 
