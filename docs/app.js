@@ -55,6 +55,7 @@ const S = {
   hdg: null,          // 기기 나침반 heading (deviceorientation)
   lastOwn: null,      // 마지막 own-ship 렌더 인자 (나침반 회전 재렌더용)
   fixLog: [],         // 최근 fix 수신 시각 (갱신률 계산용)
+  wakeWanted: false,  // 화면 유지 사용자 의도 (lock 자체와 분리)
   snap: null,         // {routeId, coords, cum, s, nextName, nextDist}
   follow: true,
   recording: false,
@@ -680,12 +681,15 @@ function startWatchdog() {
         const nd = Math.abs(r.cum[nextIdx] - clamp(s, 0, r.cum[r.cum.length - 1]));
         $('snap').textContent = `DR · ${S.snap.routeId} → ${nextName} ${fmtNM(nd)} NM`;
         setPill('warn', `DR 추정 ${Math.round(age)}s`);
+        // HUD 동기화: GS는 DR이 쓰는 가정 속도, TRK는 항로 진행 방위, ALT는 미상
+        updateHUD(spd, null, pt.course);
         updatePlanReadout();
         if (S.follow) map.easeTo({ center: [pt.lon, pt.lat], duration: 900 });
         return;
       }
     }
     setPill(age > 15 ? 'bad' : 'warn', age > 15 ? `신호 없음 ${Math.round(age)}s` : `GPS 지연 ${Math.round(age)}s`);
+    if (age > 15) updateHUD(null, null, null);   // stale 수치를 실시간처럼 두지 않는다
   }, 1000);
 }
 
@@ -809,13 +813,16 @@ function infoEntries(hits) {
 }
 
 function firInfoHTML() {
-  const units = (DATA.fir.features[0].properties.units || []).filter((u) => u.sectors.length);
+  const units = (DATA.fir.features[0].properties.units || [])
+    .filter((u) => u.sectors.length || (u.common && u.common.length));
   const blocks = units.map((u) => {
     const rows = u.sectors.map((s) =>
       `<div class="freq-row"><span>${esc(s.name)}</span><span>${esc(s.freqs.join(' '))}</span></div>`).join('');
-    const common = u.common
-      ? `<div class="freq-row"><span class="dim">COMMON</span><span>${esc(u.common.join(' '))}</span></div>` : '';
-    return `<b>${esc(u.callsign)}</b><small>${rows}${common}</small>`;
+    const common = u.common && u.common.length
+      ? `<div class="freq-row"><span class="dim">${u.sectors.length ? 'COMMON' : 'FREQ'}</span><span>${esc(u.common.join(' '))}</span></div>` : '';
+    const emerg = u.emerg && u.emerg.length
+      ? `<div class="freq-row"><span class="dim">EMERG</span><span>${esc(u.emerg.join(' '))}</span></div>` : '';
+    return `<b>${esc(u.callsign)}</b><small>${rows}${common}${emerg}</small>`;
   }).join('<div style="height:7px"></div>');
   return `<div class="info-item"><span class="tag" style="color:#7d9ec4;border:1px solid #7d9ec455">FIR</span>`
     + `<b>INCHEON FIR</b><small class="dim">섹터 주파수 (MHz)</small><div style="height:4px"></div>${blocks}</div>`;
@@ -877,7 +884,12 @@ function renderTrack() {
     if (S.track[i].t - S.track[i - 1].t > 120000) continue; // gap 구간은 거리 합산 제외
     dist += distM(S.track[i - 1].lon, S.track[i - 1].lat, S.track[i].lon, S.track[i].lat);
   }
-  const dur = S.track.length > 1 ? (S.track[S.track.length - 1].t - S.track[0].t) / 1000 : 0;
+  let durMs = 0;   // gap(>2분) 구간은 거리와 같은 기준으로 제외한 실기록 시간
+  for (let i = 1; i < S.track.length; i++) {
+    const dt = S.track[i].t - S.track[i - 1].t;
+    if (dt <= 120000) durMs += dt;
+  }
+  const dur = durMs / 1000;
   const hh = String(Math.floor(dur / 3600)).padStart(2, '0');
   const mm = String(Math.floor(dur / 60) % 60).padStart(2, '0');
   const ss = String(Math.floor(dur % 60)).padStart(2, '0');
@@ -965,27 +977,33 @@ function armCompassAutoRequest() {
 }
 
 /* ---------------- Wake Lock ---------------- */
+/* Wake Lock: '켜둔다'는 사용자 의도(S.wakeWanted)와 실제 lock(S.wake)을 분리.
+ * 앱 전환 시 UA가 lock을 해제해도 의도는 유지 → 복귀하면 자동 재획득. */
+async function acquireWake() {
+  try {
+    S.wake = await navigator.wakeLock.request('screen');
+    S.wake.addEventListener('release', () => { S.wake = null; });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 async function toggleWake() {
-  if (S.wake) {
-    try { await S.wake.release(); } catch (e) { /* noop */ }
-    S.wake = null;
+  if (S.wakeWanted) {
+    S.wakeWanted = false;
+    if (S.wake) { try { await S.wake.release(); } catch (e) { /* noop */ } S.wake = null; }
     $('btn-wake').classList.remove('on');
     return;
   }
-  try {
-    S.wake = await navigator.wakeLock.request('screen');
+  if (await acquireWake()) {
+    S.wakeWanted = true;
     $('btn-wake').classList.add('on');
-    S.wake.addEventListener('release', () => {
-      if (S.wake) { S.wake = null; $('btn-wake').classList.remove('on'); }
-    });
-  } catch (e) {
+  } else {
     toast('화면 유지 미지원 (iOS 16.4+ 필요)');
   }
 }
-document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && $('btn-wake').classList.contains('on') && !S.wake) {
-    try { S.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* noop */ }
-  }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.wakeWanted && !S.wake) acquireWake();
   if (document.visibilityState === 'hidden') saveTrack();
 });
 window.addEventListener('pagehide', saveTrack);
@@ -1073,7 +1091,8 @@ function bindUI() {
       $('flt-to').value = r.to;
       fltStatus(`${cs}: ${r.from} → ${r.to} — 경로 생성을 누르세요`);
     } catch (e) {
-      fltStatus('조회 실패 (오프라인?) — 공항을 직접 선택하세요');
+      fltStatus(e.unknown ? `${cs}: 등록되지 않은 편명입니다 — 공항을 직접 선택하세요`
+        : '조회 실패 (오프라인?) — 공항을 직접 선택하세요');
     }
   };
   $('flt-make').onclick = () => {
@@ -1085,8 +1104,20 @@ function bindUI() {
   };
   $('flt-clear').onclick = () => { clearPlan(); fltStatus('계획 삭제됨'); };
   $('btn-cache-reset').onclick = async () => {
-    if (!navigator.onLine) { toast('오프라인 상태에서는 캐시를 지울 수 없습니다 (재다운로드 불가)'); return; }
     if (!confirm('캐시를 비우고 최신 버전을 다시 받을까요?\n(트랙 기록은 유지됩니다)')) return;
+    // 파괴 전에 재다운로드 가능성을 실제로 검증한다. navigator.onLine은 기내
+    // Wi-Fi 포털처럼 인터넷 없는 LAN에서도 true라 믿을 수 없고, 검증 없이
+    // SW·캐시부터 지우면 남은 비행 내내 앱이 벽돌이 된다.
+    toast('최신 버전 확인 중…');
+    let fresh;
+    try {
+      fresh = await Promise.all(['./', 'index.html', 'app.js', 'style.css', 'sw.js']
+        .map((u) => fetch(new Request(u, { cache: 'reload' }))));
+      if (fresh.some((r) => !r.ok)) throw new Error('bad status');
+    } catch (e) {
+      toast('서버에 연결할 수 없어 리셋을 중단했습니다 (기존 캐시 유지)');
+      return;
+    }
     try {
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
@@ -1096,11 +1127,7 @@ function bindUI() {
         const keys = await caches.keys();
         await Promise.all(keys.map((k) => caches.delete(k)));
       }
-      // SW 캐시를 지워도 브라우저 HTTP 캐시(max-age=600)가 옛 파일을 준다.
-      // 핵심 파일을 강제로 다시 받아 HTTP 캐시 항목을 갈아끼운 뒤 리로드한다.
-      await Promise.all(['./', 'index.html', 'app.js', 'style.css', 'sw.js']
-        .map((u) => fetch(new Request(u, { cache: 'reload' })).catch(() => null)));
-    } catch (e) { /* 캐시 접근 실패해도 리로드는 진행 */ }
+    } catch (e) { /* 캐시 접근 실패해도 리로드는 진행 — 위에서 네트워크는 검증됨 */ }
     location.reload();
   };
   document.querySelectorAll('#layers-panel input').forEach((cb) => {
@@ -1117,7 +1144,7 @@ function bindUI() {
  * 국내선 항로는 공표된 airway로 결정되므로, 출발·도착 공항을 항로 그래프에
  * 연결해 최단경로를 구하면 예상 경로가 된다. 완전 오프라인 계산.
  * 편명 조회(adsbdb)는 온라인일 때 출발·도착 공항을 자동으로 채우는 편의 기능. */
-const PLAN_KEY = 'airtrack.plan.v1';
+const PLAN_KEY = DEMO ? 'airtrack.plan.demo' : 'airtrack.plan.v1'; // 데모 계획 격리
 let graph = null;
 let trackText = '', planText = '';
 
@@ -1273,7 +1300,11 @@ async function lookupCallsign(cs) {
   if (!r.ok) throw new Error('http ' + r.status);
   const j = await r.json();
   const fr = j.response && j.response.flightroute;
-  if (!fr) throw new Error('no route');
+  if (!fr || !fr.origin || !fr.origin.icao_code || !fr.destination || !fr.destination.icao_code) {
+    const e = new Error('unknown callsign');
+    e.unknown = true;   // 네트워크 실패와 구분 (DB 미등록 편명)
+    throw e;
+  }
   return { from: fr.origin.icao_code, to: fr.destination.icao_code };
 }
 

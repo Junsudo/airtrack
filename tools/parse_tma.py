@@ -132,7 +132,8 @@ def parse_tma():
     return feats
 
 
-FREQLINE = re.compile(r"^\d{3}\.\d{1,3}(?:\s*,\s*\d{3}\.\d{1,3})*$")
+FREQLINE = re.compile(r"^\d{3}\.\d{1,3}(?:\s*,\s*\d{3}\.\d{1,3})*\s*,?$")
+EMERGLINE = re.compile(r"^([\d., ]+?)\s*/\s*EMERG$")
 
 
 def parse_acc_sectors(html):
@@ -155,23 +156,29 @@ def parse_acc_sectors(html):
             k += 1
             continue
         if cur is not None:
-            if cur["callsign"] is None and re.match(r"(Daegu|Incheon) (Control|Information)$", l):
+            em = EMERGLINE.match(l)
+            if em:  # "121.50, 243.00/ EMERG" — 주파수와 라벨이 한 줄
+                cur["emerg"] = [f.strip() for f in em.group(1).split(",") if f.strip()]
+            elif cur["callsign"] is None and re.match(r"(Daegu|Incheon) (Control|Information)$", l):
                 cur["callsign"] = l
             elif FREQLINE.match(l) and k + 1 < len(lines) and lines[k + 1].startswith("/"):
                 name = lines[k + 1].lstrip("/ ").strip()
-                freqs = [f.strip() for f in l.split(",")]
+                freqs = [f.strip() for f in l.split(",") if f.strip()]
                 if name.upper() == "EMERG":
                     cur["emerg"] = freqs
                 else:
                     cur["sectors"].append({"name": re.sub(r"\s*Sector$", "", name), "freqs": freqs})
                 k += 2
                 continue
+            elif FREQLINE.match(l):
+                # 짝 없는 주파수 줄 (Daegu FIC — 끝에 쉼표, 섹터 구분 없음) → 기관 공통으로
+                cur["common"] = (cur["common"] or []) + [f.strip() for f in l.split(",") if f.strip()]
             elif l.startswith("COMMON"):
                 cm = re.search(r":\s*([\d., ]+)$", l)
                 if cm:
                     cur["common"] = [f.strip() for f in cm.group(1).split(",") if f.strip()]
         k += 1
-    return [u for u in units if u["sectors"] or u["callsign"]]
+    return [u for u in units if u["sectors"] or u["common"]]
 
 
 def parse_fir():

@@ -113,12 +113,54 @@ MIL_BASES = {
 OSM_EXCLUDE = {792520454}
 
 
+def _stitch_ways(ways):
+    """끝점이 맞닿은 way들을 사슬로 병합 — OSM이 한 활주로를 여러 way로 쪼갠 경우
+    (예: 평택 14/32가 170m+1830m+476m 세 way) 전체 길이를 복원한다."""
+    from collections import defaultdict
+    key = lambda p: (round(p[0], 4), round(p[1], 4))
+    ends = defaultdict(list)
+    for i, w in enumerate(ways):
+        ends[key(w["coords"][0])].append(i)
+        ends[key(w["coords"][-1])].append(i)
+    used, chains = set(), []
+    for i, w in enumerate(ways):
+        if i in used:
+            continue
+        used.add(i)
+        coords = list(w["coords"])
+        refs = [w["ref"]] if w["ref"] else []
+        grew = True
+        while grew:
+            grew = False
+            for endpt, prepend in ((coords[-1], False), (coords[0], True)):
+                for j in ends[key(endpt)]:
+                    if j in used:
+                        continue
+                    seg = ways[j]["coords"]
+                    if key(seg[-1]) == key(endpt):
+                        seg = seg[::-1]
+                    if key(seg[0]) != key(endpt):
+                        continue
+                    used.add(j)
+                    if ways[j]["ref"]:
+                        refs.append(ways[j]["ref"])
+                    if prepend:
+                        coords = seg[::-1][:-1] + coords
+                    else:
+                        coords = coords + seg[1:]
+                    grew = True
+                    break
+        ref = next((r for r in refs if "/" in r), refs[0] if refs else None)
+        chains.append({"coords": coords, "ref": ref})
+    return chains
+
+
 def osm_runways():
     path = ROOT / "raw" / "osm_runways.json"
     if not path.exists():
         print("  ! raw/osm_runways.json 없음 — 군기지 활주로 생략 (README의 Overpass 쿼리로 재생성)")
         return []
-    feats = []
+    by_base = {}
     for e in json.loads(path.read_text()).get("elements", []):
         if e.get("id") in OSM_EXCLUDE:
             continue
@@ -134,23 +176,29 @@ def osm_runways():
                           MIL_BASES[icao][0] - clat) * 111.32
         if d_km > 4:
             continue
-        a, b = coords[0], coords[-1]
-        L = math.hypot((b[0] - a[0]) * math.cos(math.radians(a[1])) * 111320,
-                       (b[1] - a[1]) * 111320)
-        if L < 800:                     # 헬리패드·소형 스트립 제외
-            continue
-        brg = (math.degrees(math.atan2(
-            (b[0] - a[0]) * math.cos(math.radians(a[1])), b[1] - a[1])) + 360) % 360
-        ref = e.get("tags", {}).get("ref")
-        if not ref:                     # ref 미태깅이면 자방위(편각 8°W 근사)로 계산
-            n = round(((brg - 8) % 360) / 10) % 36 or 36
-            ref = f"{n:02d}/{(n + 18) % 36 or 36:02d}"
-        feats.append({
-            "type": "Feature",
-            "properties": {"icao": icao, "rwy": ref,
-                           "len_m": round(L), "wid_m": 45, "brg": round(brg, 1), "src": "osm"},
-            "geometry": {"type": "LineString", "coordinates": coords},
-        })
+        by_base.setdefault(icao, []).append({"coords": coords, "ref": e.get("tags", {}).get("ref")})
+
+    feats = []
+    for icao, ways in by_base.items():
+        for chain in _stitch_ways(ways):
+            coords = chain["coords"]
+            a, b = coords[0], coords[-1]
+            L = math.hypot((b[0] - a[0]) * math.cos(math.radians(a[1])) * 111320,
+                           (b[1] - a[1]) * 111320)
+            if L < 800:                 # 병합 후에도 짧으면 헬리패드·소형 스트립
+                continue
+            brg = (math.degrees(math.atan2(
+                (b[0] - a[0]) * math.cos(math.radians(a[1])), b[1] - a[1])) + 360) % 360
+            ref = chain["ref"]
+            if not ref:                 # ref 미태깅이면 자방위(편각 8°W 근사)로 계산
+                n = round(((brg - 8) % 360) / 10) % 36 or 36
+                ref = f"{n:02d}/{(n + 18) % 36 or 36:02d}"
+            feats.append({
+                "type": "Feature",
+                "properties": {"icao": icao, "rwy": ref,
+                               "len_m": round(L), "wid_m": 45, "brg": round(brg, 1), "src": "osm"},
+                "geometry": {"type": "LineString", "coordinates": coords},
+            })
     return feats
 
 

@@ -62,13 +62,18 @@ def clean_name(text: str) -> str:
     return " ".join(dedup)
 
 
-def parse_routes(path: Path):
-    """ENR 3.x 공용: Route-designator 행 이후의 Table-row-type-2 행들을 fix로 수집."""
+def parse_routes(path: Path, dir_off=(1, 2)):
+    """ENR 3.x 공용: Route-designator 행 이후의 Table-row-type-2 행들을 fix로 수집.
+
+    dir_off: 순항고도 방향(↓/↑) 셀의 위치 — 둘째 UpperAndLower(FL 한계) 셀 기준
+    오프셋. ENR 3.3은 (+1,+2), ENR 3.1은 최저고도·폭 컬럼이 끼어 (+3,+4)."""
     soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "html.parser")
     routes = []
     cur = None
     for tr in soup.find_all("tr"):
         cls = " ".join(tr.get("class") or [])
+        if "AmdtDeleted" in cls:
+            continue  # 이번 개정에서 삭제된 행
         desig_p = tr.find("p", class_=re.compile(r"Route-designator"))
         if desig_p is not None:
             desig = re.sub(r"\s+", "", desig_p.get_text())
@@ -93,10 +98,14 @@ def parse_routes(path: Path):
             # 배정된 항로는 단방향이다 (예: Y711 ↓Even = 남행 전용, Y722 ↑Odd = 북행 전용).
             tds3 = tr.find_all("td", recursive=False)
             ual = [k for k, td in enumerate(tds3) if td.find("div", class_="UpperAndLower")]
-            if len(ual) >= 2 and ual[1] + 2 < len(tds3):
+            if len(ual) >= 2 and ual[1] + dir_off[1] < len(tds3):
                 k = ual[1]
-                fwd = tds3[k + 1].get_text(" ")
-                rev = tds3[k + 2].get_text(" ")
+                fwd = tds3[k + dir_off[0]].get_text(" ").strip()
+                rev = tds3[k + dir_off[1]].get_text(" ").strip()
+                # 구조 표류 감지: 방향 셀엔 Odd/Even/공백 외 값이 오면 안 됨
+                for v in (fwd, rev):
+                    if v and not re.fullmatch(r"(Odd|Even)(\s*/?\s*(Odd|Even))?", v):
+                        print(f"  ! {path.name} {cur['id']}: 방향 셀 예상밖 값 '{v[:30]}' — 확인 필요")
                 cur["segdirs"].append((bool(re.search(r"Odd|Even", fwd)),
                                        bool(re.search(r"Odd|Even", rev))))
             continue
@@ -127,6 +136,8 @@ def parse_navaids(path: Path):
     soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "html.parser")
     out = []
     for tr in soup.find_all("tr"):
+        if "AmdtDeleted" in " ".join(tr.get("class") or []):
+            continue
         text = tr.get_text(" ")
         coord = parse_coord(text)
         if coord is None:
@@ -151,10 +162,12 @@ def parse_navaids(path: Path):
 
 
 def parse_sigpoints(path: Path):
-    """ENR 4.4: 5-letter name-code + coord (+ 소속 route 목록)."""
+    """ENR 4.4: 5-letter name-code + coord (+ 소속 route 목록). 삭제 표시 행 제외."""
     soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "html.parser")
     out = {}
     for tr in soup.find_all("tr"):
+        if "AmdtDeleted" in " ".join(tr.get("class") or []):
+            continue  # 개정에서 삭제된 fix — 남기면 유령 fix가 표시됨
         tds = [re.sub(r"\s+", " ", td.get_text(" ")).strip() for td in tr.find_all("td")]
         if len(tds) < 2:
             continue
@@ -268,7 +281,8 @@ def fc(features):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
-    routes = parse_routes(RAW / "ENR-3.3.html") + parse_routes(RAW / "ENR-3.1.html")
+    routes = parse_routes(RAW / "ENR-3.3.html", dir_off=(1, 2)) \
+        + parse_routes(RAW / "ENR-3.1.html", dir_off=(3, 4))
     navaids = parse_navaids(RAW / "ENR-4.1.html")
     sigpoints = parse_sigpoints(RAW / "ENR-4.4.html")
     areas = parse_areas(RAW / "ENR-5.1.html")

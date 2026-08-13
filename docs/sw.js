@@ -1,5 +1,5 @@
 /* AIRTRACK service worker — cache-first 완전 오프라인 */
-const VERSION = 'airtrack-v24-airac-2026-08-05';
+const VERSION = 'airtrack-v25-airac-2026-08-05';
 const ASSETS = [
   './',
   './index.html',
@@ -31,10 +31,15 @@ const ASSETS = [
 self.addEventListener('install', (e) => {
   // GitHub Pages가 max-age=600을 주므로 addAll을 그냥 쓰면 갱신 직후에도
   // 브라우저 HTTP 캐시의 옛 파일이 그대로 담긴다. 설치 때는 항상 원본을 받는다.
+  // 자산 하나라도 실패하면 install 자체를 실패시킨다 — 불완전 캐시로 활성화되면
+  // 기존 완전한 캐시가 지워지고 기내 오프라인에서 초기화가 깨진다.
   e.waitUntil(
     caches.open(VERSION).then((c) => Promise.all(
       ASSETS.map((url) => fetch(new Request(url, { cache: 'reload' }))
-        .then((res) => (res.ok ? c.put(url, res) : null)))
+        .then((res) => {
+          if (!res.ok) throw new Error(`asset ${url}: ${res.status}`);
+          return c.put(url, res);
+        }))
     )).then(() => self.skipWaiting())
   );
 });
