@@ -428,7 +428,7 @@ function addLayers() {
     id: 'airports', type: 'symbol', source: 'airports', minzoom: 5.0,
     layout: {
       'icon-image': ['case', isMil, 'apt-mil', 'apt-ring'], 'icon-allow-overlap': true,
-      'text-field': ['get', 'icao'], 'text-font': FONT, 'text-size': 10,
+      'text-field': ['coalesce', ['get', 'icao'], ['get', 'name']], 'text-font': FONT, 'text-size': 10,
       'text-offset': [0, 1.0], 'text-anchor': 'top', 'text-optional': true,
     },
     paint: {

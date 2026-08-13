@@ -146,6 +146,45 @@ def apply_exclusions(feats):
     return done
 
 
+# CTR이 공표된 비행장인데 airports.geojson에 없는 곳 → 심벌 추가.
+# ICAO가 확실한 곳만 코드를 쓰고, 불확실(이천·논산 육군)은 이름만 표기.
+CTR_AIRFIELDS = {
+    "Seongmu CTR": ("RKTE", True), "Jinhae CTR": ("RKPE", True),
+    "Mokpo CTR": ("RKJM", True), "Pyeongtaek CTR": ("RKSG", True),
+    "Sokcho CTR": ("RKND", True), "Yecheon CTR": ("RKTY", True),
+    "Uljin CTR": ("RKTL", False), "Jeongseok CTR": ("RKPD", False),
+    "Icheon CTR": (None, True), "Nonsan CTR": (None, True),
+}
+
+
+def augment_airports(ctr_feats):
+    path = ROOT / "docs" / "data" / "airports.geojson"
+    fc = json.loads(path.read_text())
+    have = {f["properties"].get("icao") for f in fc["features"]}
+    have |= {f["properties"].get("name") for f in fc["features"]}
+    added = []
+    for f in ctr_feats:
+        name = f["properties"]["name"]
+        if name not in CTR_AIRFIELDS:
+            continue
+        icao, mil = CTR_AIRFIELDS[name]
+        base = name[:-4].strip()          # "Seongmu CTR" → "Seongmu"
+        if (icao and icao in have) or base in have:
+            continue
+        ring = f["geometry"]["coordinates"][0]
+        n = len(ring) - 1 or 1
+        center = [round(sum(p[0] for p in ring[:n]) / n, 6),
+                  round(sum(p[1] for p in ring[:n]) / n, 6)]
+        fc["features"].append({
+            "type": "Feature",
+            "properties": {"icao": icao, "name": base.upper(), "mil": mil},
+            "geometry": {"type": "Point", "coordinates": center},
+        })
+        added.append(icao or base)
+    path.write_text(json.dumps(fc, ensure_ascii=False))
+    print(f"airports 보강: +{len(added)} {added}, total {len(fc['features'])}")
+
+
 def main():
     soup = BeautifulSoup(SRC.read_text(encoding="utf-8", errors="replace"), "html.parser")
     arp = {}
@@ -207,6 +246,7 @@ def main():
     clipped = apply_exclusions(feats)
     DST.write_text(json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False))
     print(f"ctr: {len(feats)} zones, {DST.stat().st_size} bytes | 제외 반영: {clipped}")
+    augment_airports(feats)
     for f in feats:
         p = f["properties"]
         print(f"  {p['name']:<28} {p['kind']:<6} {p['vert']} {p['cls']}")
