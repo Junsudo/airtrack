@@ -93,40 +93,50 @@ def parse_eaip_runways():
     return feats
 
 
-def ato_runways():
-    src = (ATO / "atoengine" / "korea.py").read_text()
-    apt = {f["properties"]["icao"]: f["geometry"]["coordinates"]
-           for f in json.loads((ROOT / "docs" / "data" / "airports.geojson").read_text())["features"]}
+# AD 페이지가 없는 군기지: OSM 실측 활주로 (raw/osm_runways.json — Overpass
+# aeroway=runway around 각 기지. ato-engine이 덕산비행장에 OSM을 쓴 전례를 따름)
+MIL_BASES = {
+    "RKSW": (37.2390, 127.0070), "RKSO": (37.0906, 127.0297),
+    "RKTP": (36.7044, 126.4861), "RKTI": (37.0303, 127.8858),
+    "RKNN": (37.7539, 128.9450),
+}
+
+
+def osm_runways():
+    path = ROOT / "raw" / "osm_runways.json"
+    if not path.exists():
+        print("  ! raw/osm_runways.json 없음 — 군기지 활주로 생략 (README의 Overpass 쿼리로 재생성)")
+        return []
     feats = []
-    for m in re.finditer(r'AirBase\("(K-\d+)"([^\n]{0,200})', src):
-        k = m.group(1)
-        dm_ = re.search(r"rwy_deg=(\d+)", m.group(2))
-        if not dm_:
+    for e in json.loads(path.read_text()).get("elements", []):
+        g = e.get("geometry")
+        if not g or len(g) < 2:
             continue
-        deg = int(dm_.group(1))
-        icao = ATO_RWY.get(k)
-        if icao is None or icao not in apt:
+        coords = [[round(p["lon"], 6), round(p["lat"], 6)] for p in g]
+        clat = sum(c[1] for c in coords) / len(coords)
+        clon = sum(c[0] for c in coords) / len(coords)
+        icao = min(MIL_BASES, key=lambda i: math.hypot(
+            (MIL_BASES[i][1] - clon) * math.cos(math.radians(clat)), MIL_BASES[i][0] - clat))
+        d_km = math.hypot((MIL_BASES[icao][1] - clon) * math.cos(math.radians(clat)),
+                          MIL_BASES[icao][0] - clat) * 111.32
+        if d_km > 4:
             continue
-        lon, lat = apt[icao]
-        rad = math.radians(deg)
-        half = NOMINAL_M / 2
-        dlat = half * math.cos(rad) / 111320
-        dlon = half * math.sin(rad) / (111320 * math.cos(math.radians(lat)))
-        n = round(deg / 10) % 36 or 36
+        a, b = coords[0], coords[-1]
+        L = math.hypot((b[0] - a[0]) * math.cos(math.radians(a[1])) * 111320,
+                       (b[1] - a[1]) * 111320)
+        brg = (math.degrees(math.atan2(
+            (b[0] - a[0]) * math.cos(math.radians(a[1])), b[1] - a[1])) + 360) % 360
         feats.append({
             "type": "Feature",
-            "properties": {"icao": icao, "rwy": f"{n:02d}/{(n + 18) % 36 or 36:02d}",
-                           "len_m": NOMINAL_M, "wid_m": 45, "brg": deg, "src": "ato-approx"},
-            "geometry": {"type": "LineString", "coordinates": [
-                [round(lon - dlon, 6), round(lat - dlat, 6)],
-                [round(lon + dlon, 6), round(lat + dlat, 6)],
-            ]},
+            "properties": {"icao": icao, "rwy": e.get("tags", {}).get("ref", "?"),
+                           "len_m": round(L), "wid_m": 45, "brg": round(brg, 1), "src": "osm"},
+            "geometry": {"type": "LineString", "coordinates": coords},
         })
     return feats
 
 
 def main():
-    feats = parse_eaip_runways() + ato_runways()
+    feats = parse_eaip_runways() + osm_runways()
     DST.write_text(json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False))
     print(f"runways: {len(feats)}, {DST.stat().st_size} bytes")
     from collections import Counter

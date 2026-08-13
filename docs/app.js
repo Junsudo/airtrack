@@ -481,7 +481,7 @@ function addLayers() {
   // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
   map.addLayer({
     id: 'rwy', type: 'line', source: 'runways', minzoom: 9.2,
-    filter: ['==', ['get', 'src'], 'eaip'],
+    filter: ['!=', ['get', 'src'], 'ato-approx'],
     paint: {
       'line-color': '#c9d9e8', 'line-opacity': 0.95,
       'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 7],
@@ -489,7 +489,7 @@ function addLayers() {
   });
   map.addLayer({
     id: 'rwy-approx', type: 'line', source: 'runways', minzoom: 9.2,
-    filter: ['!=', ['get', 'src'], 'eaip'],
+    filter: ['==', ['get', 'src'], 'ato-approx'],
     paint: {
       'line-color': '#c9d9e8', 'line-opacity': 0.6, 'line-dasharray': [2, 1.2],
       'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 6],

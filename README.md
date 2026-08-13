@@ -27,9 +27,11 @@
   실제로 빼서 경계를 만든다(shapely). 제거량은 해석해와 일치 검증: 오산 4.0%/이론 4.1%,
   성무 4.5%/4.6%, 속초 54.6%.
 - 공항 좌표는 AD 2.2의 공식 ARP를 쓴다(하드코딩 목록은 인천 1.2km·김포 0.6km 어긋나 있었음).
-- 활주로 심벌 34본: AD 2.12의 THR 좌표 왕복끝 쌍으로 생성(tools/parse_runways.py),
-  전 활주로 THR간 거리 = 공표 길이 대조 통과. RKJK·RKSM은 ft 단위 변환. AD 페이지가
-  없는 순수 군기지 5곳은 ato-engine rwy_deg 근사(파선 표시).
+- 활주로 심벌 39본(tools/parse_runways.py): 민항 29본은 AD 2.12 THR 좌표 왕복끝 쌍
+  (방위 교차검증 최대 0.14°·길이 오차 최대 10m, RKJK·RKSM ft 변환), AD 페이지가 없는
+  군기지 5곳(오산·수원·해미·중원·강릉)은 OSM 실측 지오메트리 10본(해미·오산·중원
+  평행 2본 포함). OSM 캐시는 raw/osm_runways.json — 재생성 시 Overpass
+  aeroway=runway around 각 기지 좌표.
 - 비행 계획(FLT): 편명 조회(adsbdb, 온라인 시) 또는 공항쌍 선택 → 항로 그래프
   최단경로(Dijkstra, 완전 오프라인)로 예상 경로 생성·저장. 하단에 남은 거리·ETA.
 - TMA 42개 섹터(적층 볼륨 병합)·인천 FIR 경계, 지도 탭 정보 패널(CTR/TMA/구역/FIR
