@@ -67,7 +67,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir', 'runways'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -102,6 +102,7 @@ Promise.all([
   buildSegments();
   bindUI();
   restoreTrack();
+  restorePlan();
   startWatchdog();
   // hidden 로드 등으로 ResizeObserver를 놓친 경우 대비한 크기 감시
   setInterval(() => {
@@ -254,6 +255,8 @@ function addLayers() {
   map.addSource('ctr', { type: 'geojson', data: DATA.ctr });
   map.addSource('tma', { ...big, data: DATA.tma });
   map.addSource('fir', { type: 'geojson', data: DATA.fir });
+  map.addSource('runways', { type: 'geojson', data: DATA.runways });
+  map.addSource('plan', { type: 'geojson', data: emptyFC() });
   map.addSource('track', { type: 'geojson', data: emptyFC() });
   map.addSource('own', { type: 'geojson', data: emptyFC() });
   map.addSource('acc', { type: 'geojson', data: emptyFC() });
@@ -475,6 +478,42 @@ function addLayers() {
   // 탭 판정용 투명 fill (opacity 0이어도 queryRenderedFeatures에는 잡힘)
   map.addLayer({ id: 'tma-hit', type: 'fill', source: 'tma', minzoom: 6.0, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
   map.addLayer({ id: 'ctr-hit', type: 'fill', source: 'ctr', minzoom: 6.4, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
+  // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
+  map.addLayer({
+    id: 'rwy', type: 'line', source: 'runways', minzoom: 9.2,
+    filter: ['==', ['get', 'src'], 'eaip'],
+    paint: {
+      'line-color': '#c9d9e8', 'line-opacity': 0.95,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 7],
+    },
+  });
+  map.addLayer({
+    id: 'rwy-approx', type: 'line', source: 'runways', minzoom: 9.2,
+    filter: ['!=', ['get', 'src'], 'eaip'],
+    paint: {
+      'line-color': '#c9d9e8', 'line-opacity': 0.6, 'line-dasharray': [2, 1.2],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 6],
+    },
+  });
+  map.addLayer({
+    id: 'rwy-label', type: 'symbol', source: 'runways', minzoom: 10.6,
+    layout: {
+      'symbol-placement': 'line-center', 'text-field': ['get', 'rwy'],
+      'text-font': FONT, 'text-size': 9, 'text-offset': [0, -1.1],
+    },
+    paint: { 'text-color': '#c9d9e8', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
+  });
+
+  // 계획 경로 (편명/공항쌍 → 항로 그래프 최단경로)
+  map.addLayer({
+    id: 'plan-glow', type: 'line', source: 'plan',
+    paint: { 'line-color': '#bfe8ff', 'line-width': 6, 'line-opacity': 0.18, 'line-blur': 2 },
+  });
+  map.addLayer({
+    id: 'plan-line', type: 'line', source: 'plan',
+    paint: { 'line-color': '#bfe8ff', 'line-width': 2.2, 'line-opacity': 0.85, 'line-dasharray': [2, 2.5] },
+  });
+
   map.addLayer({
     id: 'acc', type: 'fill', source: 'acc',
     paint: { 'fill-color': COLORS.own, 'fill-opacity': 0.08 },
@@ -504,7 +543,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports'],
+  airports: ['airports', 'rwy', 'rwy-approx', 'rwy-label'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],
@@ -604,6 +643,7 @@ function handleFix(p) {
   updateSnap(S.pos.lon, S.pos.lat, S.pos.course, false);
   renderOwn(S.pos.lon, S.pos.lat, S.pos.course ?? 0, false, S.pos.acc);
   updateHUD(S.pos.spd, S.pos.alt, S.pos.course);
+  updatePlanReadout();
   S.fixLog.push(S.pos.t);
   while (S.fixLog.length && S.pos.t - S.fixLog[0] > 12000) S.fixLog.shift();
   setPill('ok', gpsPillText());
@@ -640,6 +680,7 @@ function startWatchdog() {
         const nd = Math.abs(r.cum[nextIdx] - clamp(s, 0, r.cum[r.cum.length - 1]));
         $('snap').textContent = `DR · ${S.snap.routeId} → ${nextName} ${fmtNM(nd)} NM`;
         setPill('warn', `DR 추정 ${Math.round(age)}s`);
+        updatePlanReadout();
         if (S.follow) map.easeTo({ center: [pt.lon, pt.lat], duration: 900 });
         return;
       }
@@ -840,8 +881,8 @@ function renderTrack() {
   const hh = String(Math.floor(dur / 3600)).padStart(2, '0');
   const mm = String(Math.floor(dur / 60) % 60).padStart(2, '0');
   const ss = String(Math.floor(dur % 60)).padStart(2, '0');
-  $('trk-stats').textContent = S.track.length
-    ? `${fmtNM(dist)} NM · ${hh}:${mm}:${ss}` : '';
+  trackText = S.track.length ? `${fmtNM(dist)} NM · ${hh}:${mm}:${ss}` : '';
+  refreshStats();
 }
 
 function saveTrack() {
@@ -997,6 +1038,52 @@ function bindUI() {
   };
 
   $('btn-layers').onclick = () => { $('layers-panel').hidden = !$('layers-panel').hidden; };
+
+  // ---- 비행 계획 패널 ----
+  const fltStatus = (msg) => { $('flt-status').textContent = msg; };
+  const fillSel = (sel, def) => {
+    sel.innerHTML = DATA.airports.features
+      .map((f) => f.properties.icao)
+      .sort()
+      .map((i) => `<option value="${i}"${i === def ? ' selected' : ''}>${i}</option>`)
+      .join('');
+  };
+  fillSel($('flt-from'), 'RKSS');
+  fillSel($('flt-to'), 'RKPC');
+  $('btn-flt').onclick = () => {
+    $('flt-panel').hidden = !$('flt-panel').hidden;
+    hideInfo();
+    if (!$('flt-panel').hidden && S.plan) {
+      fltStatus(`현재 계획: ${S.plan.from} → ${S.plan.to}${S.plan.fltno ? ` (${S.plan.fltno})` : ''}`);
+    }
+  };
+  $('flt-close').onclick = () => { $('flt-panel').hidden = true; };
+  $('flt-lookup').onclick = async () => {
+    const cs = $('flt-cs').value.trim().toUpperCase();
+    if (!cs) { fltStatus('편명을 입력하세요'); return; }
+    fltStatus('조회 중…');
+    try {
+      const r = await lookupCallsign(cs);
+      const have = new Set(DATA.airports.features.map((f) => f.properties.icao));
+      if (!have.has(r.from) || !have.has(r.to)) {
+        fltStatus(`${r.from} → ${r.to}: 국내 공항 데이터 밖입니다`);
+        return;
+      }
+      $('flt-from').value = r.from;
+      $('flt-to').value = r.to;
+      fltStatus(`${cs}: ${r.from} → ${r.to} — 경로 생성을 누르세요`);
+    } catch (e) {
+      fltStatus('조회 실패 (오프라인?) — 공항을 직접 선택하세요');
+    }
+  };
+  $('flt-make').onclick = () => {
+    const from = $('flt-from').value, to = $('flt-to').value;
+    if (from === to) { fltStatus('출발·도착이 같습니다'); return; }
+    const r = setPlan(from, to, $('flt-cs').value.trim().toUpperCase() || null);
+    if (r) fltStatus(`${from} → ${to} · 항로 기준 ${fmtNM(r.total)} NM 저장됨 (오프라인 유지)`);
+    else fltStatus('경로 생성 실패 — 항로 연결을 찾지 못함');
+  };
+  $('flt-clear').onclick = () => { clearPlan(); fltStatus('계획 삭제됨'); };
   $('btn-cache-reset').onclick = async () => {
     if (!navigator.onLine) { toast('오프라인 상태에서는 캐시를 지울 수 없습니다 (재다운로드 불가)'); return; }
     if (!confirm('캐시를 비우고 최신 버전을 다시 받을까요?\n(트랙 기록은 유지됩니다)')) return;
@@ -1024,6 +1111,168 @@ function bindUI() {
   });
 
   if (DEMO) $('demo-banner').hidden = false;
+}
+
+/* ---------------- 계획 경로 (편명/공항쌍 → 항로 그래프 최단경로) ----------------
+ * 국내선 항로는 공표된 airway로 결정되므로, 출발·도착 공항을 항로 그래프에
+ * 연결해 최단경로를 구하면 예상 경로가 된다. 완전 오프라인 계산.
+ * 편명 조회(adsbdb)는 온라인일 때 출발·도착 공항을 자동으로 채우는 편의 기능. */
+const PLAN_KEY = 'airtrack.plan.v1';
+let graph = null;
+let trackText = '', planText = '';
+
+function buildGraph() {
+  if (graph) return graph;
+  const nodes = new Map();   // "lon,lat" → {lon, lat, adj: [{key, w}]}
+  const key = (c) => c[0].toFixed(4) + ',' + c[1].toFixed(4);
+  const getNode = (c) => {
+    const k = key(c);
+    if (!nodes.has(k)) nodes.set(k, { lon: c[0], lat: c[1], adj: [] });
+    return k;
+  };
+  for (const f of DATA.airways.features) {
+    const cs = f.geometry.coordinates;
+    for (let i = 0; i < cs.length - 1; i++) {
+      const a = getNode(cs[i]), b = getNode(cs[i + 1]);
+      const w = distM(cs[i][0], cs[i][1], cs[i + 1][0], cs[i + 1][1]);
+      nodes.get(a).adj.push({ key: b, w });
+      nodes.get(b).adj.push({ key: a, w });
+    }
+  }
+  graph = nodes;
+  return nodes;
+}
+
+function nearestNodes(coord, k, maxM) {
+  const all = [];
+  for (const [nk, n] of buildGraph()) {
+    const d = distM(coord[0], coord[1], n.lon, n.lat);
+    if (d <= maxM) all.push({ key: nk, d });
+  }
+  all.sort((a, b) => a.d - b.d);
+  return all.slice(0, k);
+}
+
+function routeBetween(fromCoord, toCoord) {
+  const nodes = buildGraph();
+  const starts = nearestNodes(fromCoord, 4, 160000);
+  const goals = nearestNodes(toCoord, 4, 160000);
+  if (!starts.length || !goals.length) return null;
+  const goalSet = new Map(goals.map((g) => [g.key, g.d]));
+  const dist = new Map(), prev = new Map(), done = new Set();
+  const pq = [];
+  for (const s of starts) { dist.set(s.key, s.d); pq.push([s.d, s.key]); }
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]);           // 노드 수백 개 규모 — 단순 정렬로 충분
+    const [d, u] = pq.shift();
+    if (done.has(u)) continue;
+    done.add(u);
+    for (const e of nodes.get(u).adj) {
+      const nd = d + e.w;
+      if (nd < (dist.get(e.key) ?? Infinity)) {
+        dist.set(e.key, nd);
+        prev.set(e.key, u);
+        pq.push([nd, e.key]);
+      }
+    }
+  }
+  let best = null;
+  for (const [gk, gd] of goalSet) {
+    if (!dist.has(gk)) continue;
+    const total = dist.get(gk) + gd;
+    if (!best || total < best.total) best = { key: gk, total };
+  }
+  if (!best) return null;
+  const chain = [];
+  for (let u = best.key; u; u = prev.get(u)) chain.unshift(u);
+  const coords = [fromCoord, ...chain.map((k2) => {
+    const n = nodes.get(k2);
+    return [n.lon, n.lat];
+  }), toCoord];
+  return { coords, total: best.total };
+}
+
+function planCum(coords) {
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) {
+    cum.push(cum[i - 1] + distM(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]));
+  }
+  return cum;
+}
+
+function renderPlan() {
+  const src = map.getSource('plan');
+  if (!src) return;
+  src.setData(S.plan ? {
+    type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: S.plan.coords },
+  } : emptyFC());
+  updatePlanReadout();
+}
+
+function setPlan(fromIcao, toIcao, fltno) {
+  const apt = {};
+  for (const f of DATA.airports.features) apt[f.properties.icao] = f.geometry.coordinates;
+  const r = routeBetween(apt[fromIcao], apt[toIcao]);
+  if (!r) return null;
+  S.plan = { from: fromIcao, to: toIcao, fltno: fltno || null, coords: r.coords, cum: planCum(r.coords) };
+  try { localStorage.setItem(PLAN_KEY, JSON.stringify(S.plan)); } catch (e) { /* noop */ }
+  renderPlan();
+  return r;
+}
+
+function clearPlan() {
+  S.plan = null;
+  try { localStorage.removeItem(PLAN_KEY); } catch (e) { /* noop */ }
+  renderPlan();
+}
+
+function restorePlan() {
+  try {
+    const raw = localStorage.getItem(PLAN_KEY);
+    if (raw) { S.plan = JSON.parse(raw); renderPlan(); }
+  } catch (e) { /* noop */ }
+}
+
+/* 현재 위치를 계획 경로에 투영 → 남은 거리·ETA를 하단 스탯에 표시 */
+function updatePlanReadout() {
+  const p = S.est || S.pos;
+  if (!S.plan || !p) { planText = ''; refreshStats(); return; }
+  const cs = S.plan.coords, cum = S.plan.cum;
+  let best = null;
+  for (let i = 0; i < cs.length - 1; i++) {
+    const scale = Math.cos(p.lat * D2R);
+    const ax = cs[i][0] * scale, ay = cs[i][1], bx = cs[i + 1][0] * scale, by = cs[i + 1][1];
+    const px = p.lon * scale, py = p.lat;
+    const dx = bx - ax, dy = by - ay;
+    const L2 = dx * dx + dy * dy;
+    const t = L2 ? clamp(((px - ax) * dx + (py - ay) * dy) / L2, 0, 1) : 0;
+    const d = Math.hypot(px - (ax + t * dx), py - (ay + t * dy)) * D2R * R_EARTH;
+    if (!best || d < best.d) best = { i, t, d };
+  }
+  const s = cum[best.i] + best.t * (cum[best.i + 1] - cum[best.i]);
+  const rem = Math.max(0, cum[cum.length - 1] - s);
+  let txt = `→${S.plan.to} ${fmtNM(rem)}NM`;
+  const spd = S.pos ? S.pos.spd : null;
+  if (spd != null && spd > 20) {
+    const eta = new Date(Date.now() + (rem / spd) * 1000);
+    txt += ` ${String(eta.getHours()).padStart(2, '0')}:${String(eta.getMinutes()).padStart(2, '0')}`;
+  }
+  planText = txt;
+  refreshStats();
+}
+
+function refreshStats() {
+  $('trk-stats').textContent = [trackText, planText].filter(Boolean).join('  ·  ');
+}
+
+async function lookupCallsign(cs) {
+  const r = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`);
+  if (!r.ok) throw new Error('http ' + r.status);
+  const j = await r.json();
+  const fr = j.response && j.response.flightroute;
+  if (!fr) throw new Error('no route');
+  return { from: fr.origin.icao_code, to: fr.destination.icao_code };
 }
 
 /* ---------------- 데모 모드 (?demo=1) ----------------

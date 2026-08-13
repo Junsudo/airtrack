@@ -130,6 +130,36 @@ body {
   font-size: 13px; font-weight: 700;
 }
 
+/* ---------- 비행 계획 패널 ---------- */
+#flt-panel {
+  position: fixed;
+  left: calc(var(--sa-l) + 10px); right: calc(var(--sa-r) + 10px);
+  bottom: calc(var(--sa-b) + 58px);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; z-index: 29;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#flt-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 9px; }
+.flt-row { display: flex; align-items: center; gap: 8px; }
+.flt-row input, .flt-row select {
+  flex: 1; min-width: 0; height: 38px; padding: 0 10px;
+  background: #101d29; color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px; font-size: 14px;
+}
+.flt-row button {
+  height: 38px; padding: 0 14px; border-radius: 9px; white-space: nowrap;
+  background: #1d3242; color: var(--text); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 700;
+}
+.flt-row button.primary { color: var(--cyan); border-color: var(--cyan); }
+.flt-arrow { color: var(--dim); }
+#flt-close {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: #1d3242; color: var(--text); border: 1px solid var(--line); font-size: 13px;
+}
+#flt-status { font-size: 12px; min-height: 15px; }
+#flt-status.dim { color: var(--dim); }
+
 /* ---------- 탭 정보 패널 ---------- */
 #info-panel {
   position: fixed;

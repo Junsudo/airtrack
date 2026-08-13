@@ -39,9 +39,30 @@
 <footer id="bottombar">
   <button id="btn-rec">● REC</button>
   <span id="trk-stats"></span>
+  <button id="btn-flt">FLT</button>
   <button id="btn-layers">LYR</button>
   <button id="btn-wake" aria-label="화면 항상 켜기">☀</button>
 </footer>
+
+<div id="flt-panel" hidden>
+  <div id="info-head"><span id="info-title">비행 계획</span><button id="flt-close" aria-label="닫기">✕</button></div>
+  <div id="flt-body">
+    <div class="flt-row">
+      <input id="flt-cs" placeholder="편명 (예: KAL1275)" autocapitalize="characters" autocomplete="off">
+      <button id="flt-lookup">조회</button>
+    </div>
+    <div class="flt-row">
+      <select id="flt-from"></select>
+      <span class="flt-arrow">→</span>
+      <select id="flt-to"></select>
+    </div>
+    <div class="flt-row">
+      <button id="flt-make" class="primary">경로 생성</button>
+      <button id="flt-clear">삭제</button>
+    </div>
+    <div id="flt-status" class="dim"></div>
+  </div>
+</div>
 
 <div id="layers-panel" hidden>
   <label><input type="checkbox" data-group="airways" checked> 항공로</label>
