@@ -112,7 +112,9 @@ Promise.all([
       map.resize();
     }
   }, 2000);
-  if (DEMO) startDemo(); else startGPS();
+  if (DEMO) startDemo();
+  else if (window.__NATIVE) setPill('warn', '위치 대기');   // 셸이 fix를 주입
+  else startGPS();
   // localhost 개발 중엔 SW 미등록(캐시가 수정사항을 가림). ?sw=1로 강제 가능.
   const wantSW = location.hostname !== 'localhost'
     || new URLSearchParams(location.search).get('sw') === '1';
@@ -618,6 +620,35 @@ function pointAlong(routeId, s, fwd) {
   return { lon, lat, course: brg, atEnd: s <= 0 || s >= total, segIdx: i - 1 };
 }
 
+/* ---------------- native 브리지 (iOS 셸) ----------------
+ * 셸이 window.__NATIVE를 심고 CLLocationManager fix를 주입한다.
+ * __nativeBatch는 백그라운드 동안 native가 버퍼링한 fix 묶음 — 트랙에
+ * 직접 이어붙여 화면 꺼짐 구간의 공백을 메운다. */
+window.__nativeFix = (f) => {
+  handleFix({
+    coords: {
+      latitude: f.lat, longitude: f.lon, altitude: f.alt,
+      speed: f.spd, heading: f.crs, accuracy: f.acc,
+    },
+    timestamp: f.t,
+  });
+};
+window.__nativeBatch = (arr) => {
+  if (!Array.isArray(arr) || !arr.length) return;
+  if (S.recording) {
+    for (const f of arr) {
+      appendTrack({
+        t: f.t, lon: f.lon, lat: f.lat,
+        alt: f.alt != null ? f.alt : null,
+        spd: f.spd != null ? f.spd : null,
+      });
+    }
+    saveTrack();
+  }
+  window.__nativeFix(arr[arr.length - 1]);
+};
+window.__nativeHeading = (h) => applyHeading(h);
+
 /* ---------------- GPS ---------------- */
 function startGPS() {
   if (!('geolocation' in navigator)) { setPill('bad', 'GPS 미지원'); return; }
@@ -936,21 +967,25 @@ function exportGPX() {
 }
 
 /* ---------------- 나침반 ---------------- */
+/* heading 갱신 공용 처리 — 웹(deviceorientation)과 native 셸이 같이 쓴다.
+ * 정지 상태면 own-ship dart를 나침반 방향으로 회전 (150ms 스로틀). */
+function applyHeading(hdg) {
+  S.hdg = hdg;
+  const now = performance.now();
+  if (S.lastOwn && (!S.pos || S.pos.spd == null || S.pos.spd <= 8)
+      && now - (applyHeading._t || 0) > 150) {
+    applyHeading._t = now;
+    renderOwn(S.lastOwn.lon, S.lastOwn.lat, S.lastOwn.course, S.lastOwn.est, S.lastOwn.accM);
+  }
+}
+
 function enableCompass() {
   const attach = () => {
     window.addEventListener('deviceorientation', (e) => {
       let hdg = null;
       if (typeof e.webkitCompassHeading === 'number') hdg = e.webkitCompassHeading;
       else if (e.absolute && e.alpha != null) hdg = (360 - e.alpha) % 360;
-      if (hdg == null) return;
-      S.hdg = hdg;
-      // 정지 상태면 own-ship dart를 나침반 방향으로 회전 (150ms 스로틀)
-      const now = performance.now();
-      if (S.lastOwn && (!S.pos || S.pos.spd == null || S.pos.spd <= 8)
-          && now - (enableCompass._t || 0) > 150) {
-        enableCompass._t = now;
-        renderOwn(S.lastOwn.lon, S.lastOwn.lat, S.lastOwn.course, S.lastOwn.est, S.lastOwn.accM);
-      }
+      if (hdg != null) applyHeading(hdg);
     }, { passive: true });
   };
   if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
@@ -965,6 +1000,7 @@ function enableCompass() {
 /* iOS는 orientation 권한을 사용자 제스처에서만 요청할 수 있다.
  * 앱 실행 후 첫 터치가 곧 요청 제스처가 되도록 건다 (사실상 시작 즉시). */
 function armCompassAutoRequest() {
+  if (window.__NATIVE) return;   // 셸이 CLHeading을 __nativeHeading으로 공급
   if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
     const once = () => {
       document.removeEventListener('pointerdown', once);

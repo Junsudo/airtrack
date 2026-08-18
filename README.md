@@ -73,6 +73,23 @@ GitHub Pages는 `max-age=600`을 주기 때문에 SW 설치와 리셋 모두 `ca
 브라우저 HTTP 캐시를 우회하도록 해 두었다. 배포할 때는 `docs/sw.js`의 `VERSION`을
 반드시 올려야 기존 설치본이 갱신을 인지한다.
 
+## 네이티브 앱 (iOS — 백그라운드 트랙 기록)
+
+PWA는 화면이 꺼지면 GPS가 멈추는 iOS 제약이 있어, `ios/`에 WKWebView 셸이 있다.
+웹앱(docs/)을 통째로 번들하고(airtrack:// 커스텀 스킴 서빙 — SW 불필요, 오프라인
+구조 보장), 위치는 native CLLocationManager가 공급한다. **백그라운드에서는 native가
+트랙을 버퍼링(UserDefaults 보존)했다가 복귀 시 일괄 주입** — 화면이 꺼져 있어도
+트랙이 끊기지 않는다. UIBackgroundModes=location, While-Using 허가로도 동작.
+
+```bash
+ios/reinstall.sh        # 웹 동기화 → 빌드 → 아이폰 설치 (7일마다 재실행)
+```
+
+- 무료 팀은 기기당 앱 3개 — CleanFeed·FujiRemote·FujiRecipe가 차 있으면 하나 비울 것.
+- 웹을 고치면 `ios/sync-web.sh` 후 리빌드해야 앱에 반영된다 (reinstall.sh가 자동 수행).
+- 시뮬레이터 검증: iOS 27 iPhone Air에서 위치 주입·백그라운드 5fix 버퍼링·복귀 일괄
+  주입(트랙 16.8NM 복원)까지 확인됨.
+
 ## 기내 사용 체크리스트
 
 1. 창가 좌석. 탑승 전 온라인 상태에서 앱 한 번 열기.

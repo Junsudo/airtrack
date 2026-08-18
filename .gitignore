@@ -1,3 +1,6 @@
 raw/
 .DS_Store
 __pycache__/
+ios/AirTrack.xcodeproj/
+ios/AirTrack/web/
+ios/build/
