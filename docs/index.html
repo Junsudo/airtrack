@@ -76,11 +76,18 @@
   <label><input type="checkbox" data-group="tma" checked> TMA</label>
   <label><input type="checkbox" data-group="track" checked> 트랙</label>
   <div class="panel-actions">
-    <button id="btn-gpx">GPX 내보내기</button>
-    <button id="btn-clear">트랙 삭제</button>
-  </div>
-  <div class="panel-actions">
     <button id="btn-cache-reset">캐시 리셋 (새 버전 받기)</button>
+  </div>
+</div>
+
+<div id="track-panel" hidden>
+  <div id="info-head"><span id="info-title">트랙</span><button id="track-close" aria-label="닫기">✕</button></div>
+  <div id="track-body">
+    <div id="track-detail"></div>
+    <div class="flt-row">
+      <button id="btn-gpx" class="primary">GPX 내보내기</button>
+      <button id="btn-clear">트랙 삭제</button>
+    </div>
   </div>
 </div>
 

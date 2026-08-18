@@ -131,6 +131,22 @@ body {
 }
 
 /* ---------- 비행 계획 패널 ---------- */
+#track-panel {
+  position: fixed;
+  left: calc(var(--sa-l) + 10px); right: calc(var(--sa-r) + 10px);
+  bottom: calc(var(--sa-b) + 58px);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; z-index: 29;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#track-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+#track-detail { font-size: 13px; color: var(--text); line-height: 1.5; font-variant-numeric: tabular-nums; }
+#track-close {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: #1d3242; color: var(--text); border: 1px solid var(--line); font-size: 13px;
+}
+#trk-stats:active { color: var(--text); }
+
 #flt-panel {
   position: fixed;
   left: calc(var(--sa-l) + 10px); right: calc(var(--sa-r) + 10px);

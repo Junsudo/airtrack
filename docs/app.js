@@ -1054,7 +1054,7 @@ function bindUI() {
     const p = S.est || S.pos;
     if (S.follow && p) map.easeTo({ center: [p.lon, p.lat] });
   };
-  map.on('dragstart', () => { S.follow = false; $('btn-follow').classList.remove('on'); hideInfo(); });
+  map.on('dragstart', () => { S.follow = false; $('btn-follow').classList.remove('on'); closePanels(); });
 
   // 공역 탭 → 그 지점에 겹친 CTR/TMA/구역, FIR 선 탭 → 섹터 주파수
   $('info-close').onclick = hideInfo;
@@ -1081,6 +1081,8 @@ function bindUI() {
     if (S.recording && !S.pos) toast('GPS fix 대기 중 — 잡히면 기록됩니다');
     if (!S.recording) saveTrack();
   };
+  $('trk-stats').onclick = openTrackPanel;
+  $('track-close').onclick = () => { $('track-panel').hidden = true; };
   $('btn-gpx').onclick = exportGPX;
   $('btn-clear').onclick = () => {
     if (!S.track.length) return;
@@ -1088,10 +1090,15 @@ function bindUI() {
       S.track = [];
       saveTrack();
       renderTrack();
+      openTrackPanel();   // 시트 내용 갱신
     }
   };
 
-  $('btn-layers').onclick = () => { $('layers-panel').hidden = !$('layers-panel').hidden; };
+  $('btn-layers').onclick = () => {
+    const wasHidden = $('layers-panel').hidden;
+    closePanels();
+    $('layers-panel').hidden = !wasHidden;
+  };
 
   // ---- 비행 계획 패널 ----
   const fltStatus = (msg) => { $('flt-status').textContent = msg; };
@@ -1105,8 +1112,9 @@ function bindUI() {
   fillSel($('flt-from'), 'RKSS');
   fillSel($('flt-to'), 'RKPC');
   $('btn-flt').onclick = () => {
-    $('flt-panel').hidden = !$('flt-panel').hidden;
-    hideInfo();
+    const wasHidden = $('flt-panel').hidden;
+    closePanels();
+    $('flt-panel').hidden = !wasHidden;
     if (!$('flt-panel').hidden && S.plan) {
       fltStatus(`현재 계획: ${S.plan.from} → ${S.plan.to}${S.plan.fltno ? ` (${S.plan.fltno})` : ''}`);
     }
@@ -1328,7 +1336,40 @@ function updatePlanReadout() {
 }
 
 function refreshStats() {
-  $('trk-stats').textContent = [trackText, planText].filter(Boolean).join('  ·  ');
+  $('trk-stats').textContent = [trackText, planText].filter(Boolean).join('  ·  ') || '트랙';
+}
+
+/* 트랙 시트: 하단 통계를 탭하면 상세 + GPX/삭제. 트랙 관련 조작을 한곳에 모은다 */
+function openTrackPanel() {
+  closePanels();
+  const n = S.track.length;
+  if (!n) {
+    $('track-detail').textContent = '기록된 트랙이 없습니다. ● REC로 기록을 시작하세요.';
+  } else {
+    let dist = 0, durMs = 0;
+    for (let i = 1; i < n; i++) {
+      const dt = S.track[i].t - S.track[i - 1].t;
+      if (dt <= 120000) {
+        dist += distM(S.track[i - 1].lon, S.track[i - 1].lat, S.track[i].lon, S.track[i].lat);
+        durMs += dt;
+      }
+    }
+    const t0 = new Date(S.track[0].t);
+    const hh = String(Math.floor(durMs / 3600000)).padStart(2, '0');
+    const mm = String(Math.floor(durMs / 60000) % 60).padStart(2, '0');
+    $('track-detail').textContent =
+      `${fmtNM(dist)} NM · ${hh}:${mm} · ${n}개 지점 · `
+      + `시작 ${String(t0.getHours()).padStart(2, '0')}:${String(t0.getMinutes()).padStart(2, '0')}`
+      + (S.recording ? ' · 기록 중' : '');
+  }
+  $('track-panel').hidden = false;
+}
+
+function closePanels() {
+  hideInfo();
+  $('flt-panel').hidden = true;
+  $('layers-panel').hidden = true;
+  $('track-panel').hidden = true;
 }
 
 async function lookupCallsign(cs) {
