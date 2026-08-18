@@ -4,8 +4,9 @@
     {
       "name": "airtrack",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8734", "--directory", "/Users/junsu/airtrack/docs"],
-      "port": 8734
+      "runtimeArgs": ["-m", "http.server", "8735", "--directory", "/Users/junsu/airtrack/docs"],
+      "autoPort": false,
+      "port": 8735
     }
   ]
 }

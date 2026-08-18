@@ -16,6 +16,10 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
     private var buffer: [[String: Any]] = []
     private var foreground = true
     private var started = false
+    private var pageReady = false
+    private var flushing = false
+    private var sincePersist = 0
+    private var lastFix: [String: Any]?
     private static let bufferKey = "airtrack.nativeBuffer.v1"
     private static let bufferCap = 30_000          // ~8시간 @1fix/s
 
@@ -23,7 +27,10 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
         super.init()
         mgr.delegate = self
         mgr.desiredAccuracy = kCLLocationAccuracyBest
-        mgr.distanceFilter = 15
+        // distanceFilter를 걸면 정지 상태에서 fix가 한 번만 오고, 그 한 번을
+        // (웹 부팅 전이라) 놓치면 '위치 대기'에 갇힌다. 연속 수신(~1 Hz)이
+        // 버퍼 설계(bufferCap ~8시간 @1fix/s)와도 맞다.
+        mgr.distanceFilter = kCLDistanceFilterNone
         mgr.activityType = .airborne
         mgr.pausesLocationUpdatesAutomatically = false
         restoreBuffer()
@@ -31,15 +38,41 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
 
     func attach(_ wv: WKWebView) { webView = wv }
 
+    /// 페이지 로드 완료(didFinish)마다 호출. 위치 갱신은 delegate 설정 시점의
+    /// authorization 콜백으로 이미 돌고 있을 수 있으므로, 페이지 준비 전에
+    /// 도착해 버려진 fix를 마지막 값으로 다시 주입하고 밀린 배치를 전달한다.
+    /// 재로드(캐시 리셋·프로세스 복구)는 새 페이지 상태로 시작하므로
+    /// 권한 거부 상태도 매번 다시 통보해야 한다.
     func start() {
-        guard !started else { return }
+        pageReady = true
+        if started {
+            let st = mgr.authorizationStatus
+            if st == .denied || st == .restricted {
+                inject("window.__nativeDenied && window.__nativeDenied()")
+            }
+            injectLastFix()
+            flushBuffer()
+            return
+        }
         started = true
         switch mgr.authorizationStatus {
         case .notDetermined:
             mgr.requestWhenInUseAuthorization()
         default:
-            beginUpdates()
+            beginUpdates()   // denied/restricted면 여기서 __nativeDenied 통보
         }
+        injectLastFix()
+        flushBuffer()
+    }
+
+    /// WKWebView 콘텐츠 프로세스가 죽으면 didFinish까지 주입을 막는다
+    func pageGone() { pageReady = false }
+
+    private func injectLastFix() {
+        // 오래된 fix를 새것처럼 재주입하지 않는다 — 1 Hz 스트림이 곧 갱신한다
+        guard let f = lastFix, let t = f["t"] as? Int,
+              Date().timeIntervalSince1970 * 1000 - Double(t) < 30_000 else { return }
+        inject("window.__nativeFix && window.__nativeFix(\(jsonString(f)))")
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -48,7 +81,12 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
 
     private func beginUpdates() {
         let st = mgr.authorizationStatus
-        guard st == .authorizedWhenInUse || st == .authorizedAlways else { return }
+        guard st == .authorizedWhenInUse || st == .authorizedAlways else {
+            if st == .denied || st == .restricted {
+                inject("window.__nativeDenied && window.__nativeDenied()")
+            }
+            return
+        }
         // background mode capability + 이 플래그 조합이면 While-Using 허가로도
         // 백그라운드에서 계속 수신된다 (상태막대에 위치 표시가 뜸)
         mgr.allowsBackgroundLocationUpdates = true
@@ -67,6 +105,7 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         for loc in locations {
+            guard loc.horizontalAccuracy >= 0 else { continue }   // 무효 fix
             let f: [String: Any] = [
                 "lat": loc.coordinate.latitude,
                 "lon": loc.coordinate.longitude,
@@ -76,13 +115,16 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
                 "acc": loc.horizontalAccuracy,
                 "t": Int(loc.timestamp.timeIntervalSince1970 * 1000),
             ]
-            if foreground, webView != nil {
+            lastFix = f
+            if foreground, pageReady, webView != nil {
                 flushBuffer()
                 inject("window.__nativeFix && window.__nativeFix(\(jsonString(f)))")
             } else {
                 buffer.append(f)
                 if buffer.count > Self.bufferCap { buffer.removeFirst(buffer.count - Self.bufferCap) }
-                if buffer.count % 20 == 0 { persistBuffer() }
+                // buffer.count 기준이면 cap 도달 후 매 fix마다 전체 직렬화가 돈다
+                sincePersist += 1
+                if sincePersist >= 20 { persistBuffer(); sincePersist = 0 }
             }
         }
     }
@@ -94,17 +136,29 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // kCLErrorDenied 등 — 웹 쪽 pill이 '위치 대기'로 남는다. 별도 처리 불요.
+        if (error as? CLError)?.code == .denied {
+            inject("window.__nativeDenied && window.__nativeDenied()")
+        }
     }
 
     // MARK: - buffer
 
     private func flushBuffer() {
-        guard !buffer.isEmpty, webView != nil else { return }
+        // 백그라운드 트랙이 담긴 버퍼는 웹이 수신 확인(ack)한 뒤에만 비운다.
+        // 페이지 준비 전에 지우면 UserDefaults 사본까지 사라져 복구 불가.
+        guard !buffer.isEmpty, pageReady, !flushing, let wv = webView else { return }
+        flushing = true
         let batch = buffer
-        buffer = []
-        persistBuffer()
-        inject("window.__nativeBatch && window.__nativeBatch(\(jsonString(batch)))")
+        let js = "(window.__nativeBatch && window.__nativeBatch(\(jsonString(batch)))) || 0"
+        DispatchQueue.main.async { [weak self] in
+            wv.evaluateJavaScript(js) { res, _ in
+                guard let self else { return }
+                self.flushing = false
+                guard let n = res as? Int, n > 0 else { return }   // 미수신 — 다음 기회에 재시도
+                self.buffer.removeFirst(min(batch.count, self.buffer.count))
+                self.persistBuffer()
+            }
+        }
     }
 
     private func persistBuffer() {

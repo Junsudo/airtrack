@@ -62,6 +62,10 @@ const S = {
   track: [],          // {t,lon,lat,alt,spd}
   wake: null,
   demo: { on: DEMO, s: 0, path: null },
+  ready: false,       // 부팅(레이어·세그먼트) 완료 — native 주입 처리 가능 시점
+  denied: false,      // native가 위치 권한 거부를 통보함
+  pendingFix: null,   // 부팅 전 도착한 native fix (부팅 후 처리)
+  pendingBatch: [],   // 부팅 전 도착한 native 배치
 };
 
 let map, segs = [], routesById = {};
@@ -112,8 +116,20 @@ Promise.all([
       map.resize();
     }
   }, 2000);
+  S.ready = true;
+  // 부팅 전에 native 주입이 먼저 왔으면 지금 처리 (배치 → 최신 fix 순.
+  // 배치 끝이 pendingFix보다 새로우면 fix를 버려 위치 역행을 막는다)
+  if (S.pendingBatch.length) {
+    const b = S.pendingBatch; S.pendingBatch = [];
+    if (S.pendingFix && b[b.length - 1].t >= S.pendingFix.t) S.pendingFix = null;
+    window.__nativeBatch(b);
+  }
+  if (S.pendingFix) { const f = S.pendingFix; S.pendingFix = null; window.__nativeFix(f); }
   if (DEMO) startDemo();
-  else if (window.__NATIVE) setPill('warn', '위치 대기');   // 셸이 fix를 주입
+  else if (window.__NATIVE) {
+    // 셸이 fix를 주입. 이미 fix/거부 통보가 처리됐으면 pill을 되돌리지 않는다
+    if (!S.pos && !S.denied) setPill('warn', '위치 대기');
+  }
   else startGPS();
   // localhost 개발 중엔 SW 미등록(캐시가 수정사항을 가림). ?sw=1로 강제 가능.
   const wantSW = location.hostname !== 'localhost'
@@ -625,6 +641,10 @@ function pointAlong(routeId, s, fwd) {
  * __nativeBatch는 백그라운드 동안 native가 버퍼링한 fix 묶음 — 트랙에
  * 직접 이어붙여 화면 꺼짐 구간의 공백을 메운다. */
 window.__nativeFix = (f) => {
+  // 부팅(레이어·세그먼트) 전에는 지도 소스가 없어 handleFix가 죽는다.
+  // 버리지 말고 보관했다가 부팅 직후 처리한다 — 정지 상태에서 첫 fix를
+  // 잃으면 다음 fix가 없어 '위치 대기'에 갇힌다.
+  if (!S.ready) { S.pendingFix = f; return; }
   handleFix({
     coords: {
       latitude: f.lat, longitude: f.lon, altitude: f.alt,
@@ -633,21 +653,39 @@ window.__nativeFix = (f) => {
     timestamp: f.t,
   });
 };
+/* 반환값은 수신 확인(ack) — native는 0/undefined면 버퍼를 지우지 않고 재시도한다 */
 window.__nativeBatch = (arr) => {
-  if (!Array.isArray(arr) || !arr.length) return;
+  if (!Array.isArray(arr) || !arr.length) return 0;
+  if (!S.ready) { S.pendingBatch = S.pendingBatch.concat(arr); return arr.length; }
   if (S.recording) {
+    // appendTrack 루프는 fix마다 renderTrack(전체 재계산)을 불러 장시간
+    // 백그라운드 복귀 시 수 초~수 분 멈춘다. 일괄 추가 후 렌더·저장 1회.
     for (const f of arr) {
-      appendTrack({
+      const last = S.track[S.track.length - 1];
+      if (last) {
+        const d = distM(last.lon, last.lat, f.lon, f.lat);
+        const dt = (f.t - last.t) / 1000;
+        if (d < 25 && dt < 5) continue;
+      }
+      S.track.push({
         t: f.t, lon: f.lon, lat: f.lat,
         alt: f.alt != null ? f.alt : null,
         spd: f.spd != null ? f.spd : null,
       });
     }
+    renderTrack();
     saveTrack();
   }
   window.__nativeFix(arr[arr.length - 1]);
+  return arr.length;
 };
 window.__nativeHeading = (h) => applyHeading(h);
+window.__nativeDenied = () => {
+  // 셸이 위치 권한 거부/제한을 통보 — '위치 대기'로 침묵하지 않는다
+  S.denied = true;
+  setPill('bad', '위치 권한 거부');
+  toast('Settings > Privacy & Security > Location Services > AirTrack에서 허용해 주세요');
+};
 
 /* ---------------- GPS ---------------- */
 function startGPS() {
@@ -662,6 +700,7 @@ function startGPS() {
 }
 
 function handleFix(p) {
+  S.denied = false;   // fix가 온다는 것 자체가 권한 회복의 증거
   const c = p.coords;
   S.pos = {
     lon: c.longitude, lat: c.latitude,
@@ -694,6 +733,7 @@ function updateSnap(lon, lat, course, isDR) {
 /* ---------------- watchdog: fix 상실 감지 + DR ---------------- */
 function startWatchdog() {
   setInterval(() => {
+    if (S.denied) return;   // 권한 거부 pill을 '지연/신호 없음'으로 덮지 않는다
     if (!S.pos) return;
     const age = (Date.now() - S.pos.t) / 1000;
     if (age < 5) return;
@@ -876,6 +916,7 @@ function toast(msg) {
 
 /* ---------------- 트랙 기록 ---------------- */
 const TRACK_KEY = DEMO ? 'airtrack.track.demo' : 'airtrack.track.v1'; // 데모 트랙은 실데이터와 격리
+const REC_KEY = 'airtrack.rec.v1';   // 기록 중 앱이 죽어도 복귀 시 기록을 이어가기 위한 플래그 (데모 제외)
 
 function appendTrack(pos) {
   const last = S.track[S.track.length - 1];
@@ -935,6 +976,13 @@ function restoreTrack() {
   try {
     const raw = localStorage.getItem(TRACK_KEY);
     if (raw) { S.track = JSON.parse(raw); renderTrack(); }
+    // 기록 중 프로세스가 죽었으면 복귀 시 이어서 기록 — native 배치 드레인이
+    // 트랙에 붙으려면 이 복원이 드레인보다 먼저여야 한다 (부팅 순서 보장)
+    if (!DEMO && localStorage.getItem(REC_KEY) === '1') {
+      S.recording = true;
+      $('btn-rec').classList.add('on');
+      $('btn-rec').textContent = '■ REC';
+    }
   } catch (e) { /* ignore */ }
 }
 
@@ -1076,6 +1124,7 @@ function bindUI() {
 
   $('btn-rec').onclick = () => {
     S.recording = !S.recording;
+    if (!DEMO) { try { localStorage.setItem(REC_KEY, S.recording ? '1' : '0'); } catch (e) { /* quota */ } }
     $('btn-rec').classList.toggle('on', S.recording);
     $('btn-rec').textContent = S.recording ? '■ REC' : '● REC';
     if (S.recording && !S.pos) toast('GPS fix 대기 중 — 잡히면 기록됩니다');

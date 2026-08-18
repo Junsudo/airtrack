@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 /// 번들 web/ 폴더를 airtrack://app/... 커스텀 스킴으로 서빙한다.
@@ -53,6 +54,7 @@ struct WebContainer: UIViewRepresentable {
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = context.coordinator
+        wv.uiDelegate = context.coordinator      // confirm()/alert() — 없으면 confirm이 항상 false
         wv.scrollView.isScrollEnabled = false      // 지도 제스처는 MapLibre가 처리
         wv.scrollView.contentInsetAdjustmentBehavior = .never
         wv.isOpaque = false
@@ -66,13 +68,51 @@ struct WebContainer: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let bridge: LocationBridge
         init(bridge: LocationBridge) { self.bridge = bridge }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // 페이지가 준비된 뒤에 권한 요청 → 프롬프트가 지도 위에 뜬다
             bridge.start()
+        }
+
+        /// 콘텐츠 프로세스가 죽으면 WKWebView는 스스로 리로드하지 않는다 —
+        /// 기내에서 흰 화면으로 방치되는 걸 막기 위해 즉시 리로드한다.
+        /// didFinish가 다시 start()를 불러 fix·권한 상태를 복원한다.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            bridge.pageGone()
+            webView.reload()
+        }
+
+        // WKUIDelegate가 없으면 window.confirm()이 항상 false로 완료돼
+        // 캐시 리셋·트랙 삭제 버튼이 소리 없이 죽는다.
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                     initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            guard let vc = Self.topViewController() else { completionHandler(false); return }
+            let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completionHandler(false) })
+            a.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler(true) })
+            vc.present(a, animated: true)
+        }
+
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                     initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            guard let vc = Self.topViewController() else { completionHandler(); return }
+            let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler() })
+            vc.present(a, animated: true)
+        }
+
+        private static func topViewController() -> UIViewController? {
+            let scene = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive }
+                ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+            var vc = scene?.keyWindow?.rootViewController
+                ?? scene?.windows.first?.rootViewController
+            while let p = vc?.presentedViewController { vc = p }
+            return vc
         }
     }
 }
