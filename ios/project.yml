@@ -34,3 +34,4 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.junsu.airtrack
         INFOPLIST_FILE: AirTrack/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
