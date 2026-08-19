@@ -1,5 +1,6 @@
-import Foundation
 import CoreLocation
+import CoreMotion
+import Foundation
 import SwiftUI
 import WebKit
 
@@ -12,6 +13,8 @@ import WebKit
 /// allowsBackgroundLocationUpdates로 화면이 꺼져도 fix가 계속 온다.
 final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let mgr = CLLocationManager()
+    private let altimeter = CMAltimeter()
+    private var altimeterStarted = false
     private weak var webView: WKWebView?
     private var buffer: [[String: Any]] = []
     private var foreground = true
@@ -63,10 +66,23 @@ final class LocationBridge: NSObject, ObservableObject, CLLocationManagerDelegat
         }
         injectLastFix()
         flushBuffer()
+        startBaro()
     }
 
     /// WKWebView 콘텐츠 프로세스가 죽으면 didFinish까지 주입을 막는다
     func pageGone() { pageReady = false }
+
+    /// 기압계 → __nativeBaro(hPa). PA 환산은 웹이 한다.
+    /// 여압 객실에서는 객실 기압을 읽는다 — 항공기 FL이 아님 (라벨에 반영됨).
+    private func startBaro() {
+        guard !altimeterStarted, CMAltimeter.isRelativeAltitudeAvailable() else { return }
+        altimeterStarted = true
+        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
+            guard let self, self.foreground, self.pageReady, let d = data else { return }
+            let hpa = d.pressure.doubleValue * 10.0   // kPa → hPa
+            self.inject("window.__nativeBaro && window.__nativeBaro(\(String(format: "%.2f", hpa)))")
+        }
+    }
 
     private func injectLastFix() {
         // 오래된 fix를 새것처럼 재주입하지 않는다 — 1 Hz 스트림이 곧 갱신한다

@@ -37,6 +37,8 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>기내 지도에 현재 위치와 비행 트랙을 표시합니다.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>기압계로 기압고도(객실 기압고도)를 표시합니다.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>화면이 꺼져 있는 동안에도 비행 트랙을 끊김 없이 기록합니다.</string>
 	<key>UIBackgroundModes</key>

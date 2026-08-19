@@ -62,6 +62,7 @@ const S = {
   track: [],          // {t,lon,lat,alt,spd}
   wake: null,
   demo: { on: DEMO, s: 0, path: null },
+  baro: null,         // {hpa, t} native 기압계 (여압 객실에서는 객실 기압고도)
   ready: false,       // 부팅(레이어·세그먼트) 완료 — native 주입 처리 가능 시점
   denied: false,      // native가 위치 권한 거부를 통보함
   pendingFix: null,   // 부팅 전 도착한 native fix (부팅 후 처리)
@@ -72,7 +73,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir', 'runways'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir', 'runways', 'taxiways'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -275,6 +276,7 @@ function addLayers() {
   map.addSource('tma', { ...big, data: DATA.tma });
   map.addSource('fir', { type: 'geojson', data: DATA.fir });
   map.addSource('runways', { type: 'geojson', data: DATA.runways });
+  map.addSource('taxiways', { type: 'geojson', data: DATA.taxiways });
   map.addSource('plan', { type: 'geojson', data: emptyFC() });
   map.addSource('track', { type: 'geojson', data: emptyFC() });
   map.addSource('own', { type: 'geojson', data: emptyFC() });
@@ -497,6 +499,14 @@ function addLayers() {
   // 탭 판정용 투명 fill (opacity 0이어도 queryRenderedFeatures에는 잡힘)
   map.addLayer({ id: 'tma-hit', type: 'fill', source: 'tma', minzoom: 6.0, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
   map.addLayer({ id: 'ctr-hit', type: 'fill', source: 'ctr', minzoom: 6.4, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
+  // 택시웨이 (OSM aeroway=taxiway) — 활주로보다 아래, 저채도
+  map.addLayer({
+    id: 'twy', type: 'line', source: 'taxiways', minzoom: 10.4,
+    paint: {
+      'line-color': '#5f7d94', 'line-opacity': 0.8,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 0.5, 14, 3],
+    },
+  });
   // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
   map.addLayer({
     id: 'rwy', type: 'line', source: 'runways', minzoom: 9.2,
@@ -562,7 +572,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports', 'rwy', 'rwy-approx', 'rwy-label'],
+  airports: ['airports', 'twy', 'rwy', 'rwy-approx', 'rwy-label'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],
@@ -680,6 +690,10 @@ window.__nativeBatch = (arr) => {
   return arr.length;
 };
 window.__nativeHeading = (h) => applyHeading(h);
+window.__nativeBaro = (hpa) => {
+  S.baro = { hpa, t: Date.now() };
+  renderPA();
+};
 window.__nativeDenied = () => {
   // 셸이 위치 권한 거부/제한을 통보 — '위치 대기'로 침묵하지 않는다
   S.denied = true;
@@ -815,6 +829,27 @@ function updateHUD(spd, alt, course) {
   } else {
     $('m-trk').textContent = '—';
   }
+  // IAS/TAS는 폰으로 직접 측정 불가 — 무풍 가정 추정치(≈)로만 표시.
+  // TAS≈GS, IAS≈TAS·√σ (σ: GPS 고도의 ISA 밀도비)
+  const tas = spd != null ? spd * 1.9438 : null;
+  $('m-tas').textContent = tas != null ? Math.round(tas) : '—';
+  if (tas != null && alt != null) {
+    const sigma = Math.pow(Math.max(0, 1 - 2.25577e-5 * alt), 4.2561);
+    $('m-ias').textContent = Math.round(tas * Math.sqrt(sigma));
+  } else {
+    $('m-ias').textContent = '—';
+  }
+  renderPA();
+}
+
+/* 기압고도: native CMAltimeter의 station pressure → ISA 환산.
+ * 여압 객실에서는 항공기 FL이 아니라 객실 기압고도가 나온다. */
+function renderPA() {
+  const b = S.baro;
+  const fresh = b && Date.now() - b.t < 10000;
+  $('m-pa').textContent = fresh
+    ? Math.round(145366.45 * (1 - Math.pow(b.hpa / 1013.25, 0.190284))).toLocaleString()
+    : '—';
 }
 
 /* iOS는 위성 개수를 앱에 노출하지 않는다(웹·네이티브 공통). 대신 관측 가능한

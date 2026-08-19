@@ -55,6 +55,9 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #hud-right { display: flex; gap: 14px; justify-content: flex-end; }
+#hud-extra { display: flex; gap: 14px; justify-content: flex-end; }
+.metric.sm b { font-size: 13px; color: var(--text); }
+.metric.sm small { font-size: 9px; }
 .metric { text-align: right; }
 .metric b {
   display: block; font-size: 17px; font-weight: 700;
