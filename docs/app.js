@@ -91,7 +91,7 @@ Promise.all([
       center: [126.9, 35.6],
       zoom: 6.1,
       minZoom: 4.5,
-      maxZoom: 14,
+      maxZoom: 17,   // 지상 활주 시 택시웨이 식별 가능 배율까지
       maxBounds: [[119.0, 26.0], [138.0, 45.8]],
       dragRotate: false,
       pitchWithRotate: false,
@@ -504,8 +504,17 @@ function addLayers() {
     id: 'twy', type: 'line', source: 'taxiways', minzoom: 10.4,
     paint: {
       'line-color': '#5f7d94', 'line-opacity': 0.8,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 0.5, 14, 3],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 0.5, 14, 3, 16.5, 8],
     },
+  });
+  map.addLayer({
+    id: 'twy-label', type: 'symbol', source: 'taxiways', minzoom: 13.2,
+    filter: ['has', 'ref'],
+    layout: {
+      'symbol-placement': 'line', 'text-field': ['get', 'ref'],
+      'text-font': FONT, 'text-size': 10, 'symbol-spacing': 320,
+    },
+    paint: { 'text-color': '#9fc0d8', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
   });
   // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
   map.addLayer({
@@ -513,7 +522,7 @@ function addLayers() {
     filter: ['!=', ['get', 'src'], 'ato-approx'],
     paint: {
       'line-color': '#c9d9e8', 'line-opacity': 0.95,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 7],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 7, 16.5, 18],
     },
   });
   map.addLayer({
@@ -525,12 +534,43 @@ function addLayers() {
     },
   });
   map.addLayer({
-    id: 'rwy-label', type: 'symbol', source: 'runways', minzoom: 10.6,
+    id: 'rwy-label', type: 'symbol', source: 'runways', minzoom: 10.6, maxzoom: 13.5,
     layout: {
       'symbol-placement': 'line-center', 'text-field': ['get', 'rwy'],
       'text-font': FONT, 'text-size': 9, 'text-offset': [0, -1.1],
     },
     paint: { 'text-color': '#c9d9e8', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
+  });
+  // 활주로 끝 번호 (차트처럼 THR마다, 활주로 방향으로 회전).
+  // brg 프로퍼티는 첫 designator의 방위 — 좌표 진행방향과 비교해 끝 순서를 정한다.
+  const rwyNums = [];
+  for (const f of DATA.runways.features) {
+    const rwy = f.properties.rwy || '';
+    if (!rwy.includes('/')) continue;
+    const cs = f.geometry.coordinates;
+    const a = cs[0], b = cs[cs.length - 1];
+    const fwd = bearingDeg(a[0], a[1], b[0], b[1]);
+    const diff = Math.abs(((fwd - (f.properties.brg ?? fwd)) % 360 + 540) % 360 - 180);
+    const [n1, n2] = rwy.split('/');
+    const first = diff > 90 ? n2 : n1;            // coords[0] 끝의 designator
+    const second = first === n1 ? n2 : n1;
+    rwyNums.push(
+      { type: 'Feature', properties: { num: first, rot: fwd },
+        geometry: { type: 'Point', coordinates: a } },
+      { type: 'Feature', properties: { num: second, rot: (fwd + 180) % 360 },
+        geometry: { type: 'Point', coordinates: b } },
+    );
+  }
+  map.addSource('rwynum', { type: 'geojson', data: { type: 'FeatureCollection', features: rwyNums } });
+  map.addLayer({
+    id: 'rwy-num', type: 'symbol', source: 'rwynum', minzoom: 12.8,
+    layout: {
+      'text-field': ['get', 'num'], 'text-font': FONT,
+      'text-size': ['interpolate', ['linear'], ['zoom'], 13, 11, 16, 18],
+      'text-rotate': ['get', 'rot'], 'text-rotation-alignment': 'map',
+      'text-offset': [0, -1.6], 'text-allow-overlap': true,
+    },
+    paint: { 'text-color': '#eef6ff', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.5 },
   });
 
   // 계획 경로 (편명/공항쌍 → 항로 그래프 최단경로)
@@ -572,7 +612,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports', 'twy', 'rwy', 'rwy-approx', 'rwy-label'],
+  airports: ['airports', 'twy', 'twy-label', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],
@@ -676,6 +716,10 @@ window.__nativeBatch = (arr) => {
         const d = distM(last.lon, last.lat, f.lon, f.lat);
         const dt = (f.t - last.t) / 1000;
         if (d < 25 && dt < 5) continue;
+        // 포그라운드 handleFix와 같은 저속 스파이크 필터 (백그라운드 기록 보호)
+        const vRep = Math.max(f.spd || 0, last.spd || 0);
+        if (dt > 0 && dt < 30 && vRep < 15
+            && d > vRep * dt + 25 + (f.acc || 0) && d / dt > 25) continue;
       }
       S.track.push({
         t: f.t, lon: f.lon, lat: f.lat,
@@ -716,6 +760,25 @@ function startGPS() {
 function handleFix(p) {
   S.denied = false;   // fix가 온다는 것 자체가 권한 회복의 증거
   const c = p.coords;
+  // 스파이크 필터: 저속·정지 중 멀티패스 재획득으로 위치가 수십~수백 m
+  // 튀는 fix를 버린다 (CJU 라인업 실측: GS 0kt에 1초 116m 점프 × 4회).
+  // 저속(vRep<15 m/s)에서만 작동한다 — 고속에서는 이 실패 모드가 관측된 적이
+  // 없고, GPS 재획득 직후의 유효한 fix를 오거부하는 부작용만 있다
+  // (KAMIT 47초 공백 복귀 fix가 초기 버전에서 실제로 거부됐음).
+  // 30초 이상 공백 뒤는 무조건 수락(진짜 이동), 연속 3회 거부 시도 수락(고착 방지).
+  if (S.pos && !S.demo.on) {
+    const dt = (Date.now() - S.pos.t) / 1000;
+    const vRep = Math.max((c.speed != null && c.speed >= 0) ? c.speed : 0, S.pos.spd || 0);
+    if (dt > 0 && dt < 30 && vRep < 15) {
+      const d = distM(S.pos.lon, S.pos.lat, c.longitude, c.latitude);
+      const allow = vRep * dt + 25 + 0.5 * ((c.accuracy || 0) + (S.pos.acc || 0));
+      if (d > allow && d / dt > 25) {
+        S.spikeN = (S.spikeN || 0) + 1;
+        if (S.spikeN < 3) return;   // 스파이크 폐기 — 다음 정상 fix가 잇는다
+      }
+    }
+  }
+  S.spikeN = 0;
   S.pos = {
     lon: c.longitude, lat: c.latitude,
     alt: c.altitude,
@@ -1373,10 +1436,36 @@ function renderPlan() {
   updatePlanReadout();
 }
 
+/* 실측 검증된 선호 경로. shortest path는 enroute는 맞추지만 SID/STAR 흐름은
+ * 모른다(eAIP ENR 텍스트에 없음). 실제 비행 트랙으로 확인된 쌍만 등록하고
+ * 나머지는 Dijkstra. 출처: 2026-08-19 CJU→GMP 실측 (Z81→Y722→OLMEN→Z52→
+ * Y685→Y697 서측 arrival). GMP 활주로 방향에 따라 흐름이 다를 수 있음 — n=1. */
+const PREFERRED_ROUTES = {
+  'RKPC>RKSS': ['RENEK', 'OMKEL', 'GUKSU', 'OLLEH', 'KAMIT', 'SAMUL', 'LILVI',
+    'GOMUX', 'GUMAK', 'MAKSA', 'ATASO', 'PEBRI', 'GUNKU', 'OLMEN',
+    'POSAN', 'UPKIG', 'SUPOM', 'MOBAK', 'WONKO', 'DUDOT'],
+};
+
+function preferredRoute(fromIcao, toIcao, fromCoord, toCoord) {
+  const names = PREFERRED_ROUTES[`${fromIcao}>${toIcao}`];
+  if (!names) return null;
+  const byName = {};
+  for (const f of DATA.fixes.features) byName[f.properties.name] = f.geometry.coordinates;
+  const chain = names.map((n) => byName[n]).filter(Boolean);
+  if (chain.length < names.length - 2) return null;   // AIRAC 갱신으로 fix가 사라지면 Dijkstra로
+  const coords = [fromCoord, ...chain, toCoord];
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    total += distM(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]);
+  }
+  return { coords, total };
+}
+
 function setPlan(fromIcao, toIcao, fltno) {
   const apt = {};
   for (const f of DATA.airports.features) apt[f.properties.icao] = f.geometry.coordinates;
-  const r = routeBetween(apt[fromIcao], apt[toIcao]);
+  const r = preferredRoute(fromIcao, toIcao, apt[fromIcao], apt[toIcao])
+    || routeBetween(apt[fromIcao], apt[toIcao]);
   if (!r) return null;
   S.plan = { from: fromIcao, to: toIcao, fltno: fltno || null, coords: r.coords, cum: planCum(r.coords) };
   try { localStorage.setItem(PLAN_KEY, JSON.stringify(S.plan)); } catch (e) { /* noop */ }
