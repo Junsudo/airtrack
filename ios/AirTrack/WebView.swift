@@ -50,6 +50,8 @@ struct WebContainer: UIViewRepresentable {
         let flag = WKUserScript(source: "window.__NATIVE = true;",
                                 injectionTime: .atDocumentStart, forMainFrameOnly: true)
         config.userContentController.addUserScript(flag)
+        // GPX 내보내기 — WKWebView는 <a download>를 무시하므로 공유 시트로 받는다
+        config.userContentController.add(context.coordinator, name: "exportGPX")
         config.allowsInlineMediaPlayback = true
 
         let wv = WKWebView(frame: .zero, configuration: config)
@@ -68,9 +70,26 @@ struct WebContainer: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let bridge: LocationBridge
         init(bridge: LocationBridge) { self.bridge = bridge }
+
+        func userContentController(_ ucc: WKUserContentController,
+                                   didReceive message: WKScriptMessage) {
+            guard message.name == "exportGPX",
+                  let body = message.body as? [String: Any],
+                  let gpx = body["gpx"] as? String,
+                  let name = body["name"] as? String else { return }
+            let safe = (name as NSString).lastPathComponent   // 경로 조작 방지
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(safe)
+            do { try gpx.write(to: url, atomically: true, encoding: .utf8) } catch { return }
+            DispatchQueue.main.async {
+                guard let vc = Self.topViewController() else { return }
+                let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                av.popoverPresentationController?.sourceView = vc.view
+                vc.present(av, animated: true)
+            }
+        }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // 페이지가 준비된 뒤에 권한 요청 → 프롬프트가 지도 위에 뜬다

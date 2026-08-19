@@ -1006,10 +1006,16 @@ function exportGPX() {
   const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="AIRTRACK" xmlns="http://www.topografix.com/GPX/1/1">` +
     `<trk><name>AIRTRACK ${new Date(S.track[0].t).toISOString().slice(0, 10)}</name>${trksegs}</trk></gpx>`;
+  const d = new Date(S.track[0].t);
+  const name = `airtrack-${d.toISOString().slice(0, 16).replace(/[-:T]/g, '')}.gpx`;
+  // WKWebView는 <a download>를 처리하지 않는다 — 셸에서는 native 공유 시트로
+  if (window.__NATIVE && window.webkit?.messageHandlers?.exportGPX) {
+    window.webkit.messageHandlers.exportGPX.postMessage({ gpx, name });
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
-  const d = new Date(S.track[0].t);
-  a.download = `airtrack-${d.toISOString().slice(0, 16).replace(/[-:T]/g, '')}.gpx`;
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
