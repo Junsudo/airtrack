@@ -63,6 +63,7 @@ const S = {
   wake: null,
   demo: { on: DEMO, s: 0, path: null },
   baro: null,         // {hpa, t} native 기압계 (여압 객실에서는 객실 기압고도)
+  gsnap: localStorage.getItem('airtrack.gsnap.v1') !== '0',  // 지상 스냅(정제 표시) 토글
   ready: false,       // 부팅(레이어·세그먼트) 완료 — native 주입 처리 가능 시점
   denied: false,      // native가 위치 권한 거부를 통보함
   pendingFix: null,   // 부팅 전 도착한 native fix (부팅 후 처리)
@@ -837,14 +838,20 @@ function handleFix(p) {
   };
   S.est = null;
   updateSnap(S.pos.lon, S.pos.lat, S.pos.course, false);
-  renderOwn(S.pos.lon, S.pos.lat, S.pos.course ?? 0, false, S.pos.acc);
+  // 지상 스냅 ON이면 표시 위치만 centerline으로 (기록은 raw 그대로)
+  let dLon = S.pos.lon, dLat = S.pos.lat;
+  if (S.gsnap && window.GM && !S.demo.on) {
+    const sn = GM.liveSnap(S.pos.lon, S.pos.lat, S.pos.spd);
+    if (sn) { dLon = sn.lon; dLat = sn.lat; }
+  }
+  renderOwn(dLon, dLat, S.pos.course ?? 0, false, S.pos.acc);
   updateHUD(S.pos.spd, S.pos.alt, S.pos.course);
   updatePlanReadout();
   S.fixLog.push(S.pos.t);
   while (S.fixLog.length && S.pos.t - S.fixLog[0] > 12000) S.fixLog.shift();
   setPill('ok', gpsPillText());
   if (S.recording) appendTrack(S.pos);
-  if (S.follow) map.easeTo({ center: [S.pos.lon, S.pos.lat], duration: 800 });
+  if (S.follow) map.easeTo({ center: [dLon, dLat], duration: 800 });
 }
 
 function updateSnap(lon, lat, course, isDR) {
@@ -1076,12 +1083,13 @@ function appendTrack(pos) {
   if (S.track.length % 5 === 0) saveTrack();
 }
 
-function trackSegments() {
+function trackSegments(pts) {
+  const src = pts || S.track;
   const lines = [];
   let cur = [];
-  for (let i = 0; i < S.track.length; i++) {
-    const p = S.track[i];
-    if (i > 0 && p.t - S.track[i - 1].t > 120000 && cur.length) {
+  for (let i = 0; i < src.length; i++) {
+    const p = src[i];
+    if (i > 0 && p.t - src[i - 1].t > 120000 && cur.length) {
       if (cur.length > 1) lines.push(cur);
       cur = [];
     }
@@ -1091,8 +1099,24 @@ function trackSegments() {
   return lines;
 }
 
+/* 정제본 뷰 캐시 — 지상 1 Hz 기록 중 매 fix마다 전체 재계산하지 않도록
+ * 30점 단위로 갱신. 원본 S.track은 절대 수정하지 않는다. */
+let gsnapCache = { n: -1, pts: null };
+function trackView(force) {
+  if (!S.gsnap || !window.GM || S.demo.on) return S.track;
+  if (force || !gsnapCache.pts || Math.abs(S.track.length - gsnapCache.n) >= 30) {
+    try {
+      gsnapCache = { n: S.track.length, pts: GM.processTrack(S.track) };
+    } catch (e) {
+      console.error('groundmatch', e);
+      return S.track;   // 정제 실패 시 원본 표시 — 기능이 로깅을 방해하지 않는다
+    }
+  }
+  return gsnapCache.pts;
+}
+
 function renderTrack() {
-  const lines = trackSegments();
+  const lines = trackSegments(trackView());
   map.getSource('track').setData(lines.length ? {
     type: 'Feature', properties: {},
     geometry: { type: 'MultiLineString', coordinates: lines },
@@ -1134,11 +1158,13 @@ function restoreTrack() {
 
 function exportGPX() {
   if (!S.track.length) { toast('기록된 트랙이 없습니다'); return; }
+  // 지상 스냅 ON이면 정제본을 내보낸다 (원본이 필요하면 토글 OFF 후 내보내기)
+  const src = trackView(true);
   const segsOut = [];
   let cur = [];
-  for (let i = 0; i < S.track.length; i++) {
-    const p = S.track[i];
-    if (i > 0 && p.t - S.track[i - 1].t > 120000 && cur.length) { segsOut.push(cur); cur = []; }
+  for (let i = 0; i < src.length; i++) {
+    const p = src[i];
+    if (i > 0 && p.t - src[i - 1].t > 120000 && cur.length) { segsOut.push(cur); cur = []; }
     cur.push(p);
   }
   if (cur.length) segsOut.push(cur);
@@ -1375,12 +1401,22 @@ function bindUI() {
     } catch (e) { /* 캐시 접근 실패해도 리로드는 진행 — 위에서 네트워크는 검증됨 */ }
     location.reload();
   };
-  document.querySelectorAll('#layers-panel input').forEach((cb) => {
+  document.querySelectorAll('#layers-panel input[data-group]').forEach((cb) => {
     cb.onchange = () => {
       const ids = LAYER_GROUPS[cb.dataset.group] || [];
       ids.forEach((id) => map.setLayoutProperty(id, 'visibility', cb.checked ? 'visible' : 'none'));
     };
   });
+  // 지상 스냅(정제 표시): 기록 원본은 그대로, 표시·내보내기만 정제본 사용
+  const gsnapCb = $('opt-gsnap');
+  gsnapCb.checked = S.gsnap;
+  gsnapCb.onchange = () => {
+    S.gsnap = gsnapCb.checked;
+    try { localStorage.setItem('airtrack.gsnap.v1', S.gsnap ? '1' : '0'); } catch (e) { /* noop */ }
+    gsnapCache = { n: -1, pts: null };
+    renderTrack();
+    if (S.lastOwn) renderOwn(S.lastOwn.lon, S.lastOwn.lat, S.lastOwn.course, S.lastOwn.est, S.lastOwn.accM);
+  };
 
   if (DEMO) $('demo-banner').hidden = false;
 }
