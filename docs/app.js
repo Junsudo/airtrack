@@ -520,9 +520,16 @@ function addLayers() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 13.5, 0.6, 16.5, 2.5],
     },
   });
+  // 턴패드: OSM centerline 루프가 감싼 면을 포장으로 채움 (얇은 루프 선 방지)
+  map.addLayer({
+    id: 'twy-pad', type: 'fill', source: 'taxiways', minzoom: 10.4,
+    filter: ['has', 'pad'],
+    paint: { 'fill-color': '#5f7d94', 'fill-opacity': 0.55 },
+  });
   // 택시웨이 (OSM aeroway=taxiway) — 활주로보다 아래, 저채도
   map.addLayer({
     id: 'twy', type: 'line', source: 'taxiways', minzoom: 10.4,
+    filter: ['!', ['has', 'pad']],
     paint: {
       'line-color': '#5f7d94', 'line-opacity': 0.8,
       'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 0.5, 14, 3, 16.5, 8],
@@ -653,7 +660,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports', 'apron', 'bldg', 'stand', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
+  airports: ['airports', 'apron', 'bldg', 'stand', 'twy-pad', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],
