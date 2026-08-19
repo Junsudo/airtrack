@@ -73,7 +73,7 @@ let map, segs = [], routesById = {};
 
 /* ---------------- 데이터 로드 + 지도 ---------------- */
 const DATA = {};
-const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir', 'runways', 'taxiways'];
+const files = ['land', 'airways', 'fixes', 'navaids', 'areas', 'airports', 'boundaries', 'bnd_labels', 'ctr', 'rivers', 'tma', 'fir', 'runways', 'taxiways', 'ground'];
 
 Promise.all([
   Promise.all(files.map((f) =>
@@ -277,6 +277,7 @@ function addLayers() {
   map.addSource('fir', { type: 'geojson', data: DATA.fir });
   map.addSource('runways', { type: 'geojson', data: DATA.runways });
   map.addSource('taxiways', { type: 'geojson', data: DATA.taxiways });
+  map.addSource('ground', { type: 'geojson', data: DATA.ground });
   map.addSource('plan', { type: 'geojson', data: emptyFC() });
   map.addSource('track', { type: 'geojson', data: emptyFC() });
   map.addSource('own', { type: 'geojson', data: emptyFC() });
@@ -499,6 +500,26 @@ function addLayers() {
   // 탭 판정용 투명 fill (opacity 0이어도 queryRenderedFeatures에는 잡힘)
   map.addLayer({ id: 'tma-hit', type: 'fill', source: 'tma', minzoom: 6.0, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
   map.addLayer({ id: 'ctr-hit', type: 'fill', source: 'ctr', minzoom: 6.4, paint: { 'fill-color': '#000', 'fill-opacity': 0 } });
+  // 공항 지상 시설 (OSM): 에이프런 → 건물 → 주기장 리드인 → 택시웨이 →
+  // 활주로 포장 → eAIP 활주로 라인 순서로 쌓는다
+  map.addLayer({
+    id: 'apron', type: 'fill', source: 'ground', minzoom: 10.4,
+    filter: ['==', ['get', 'k'], 'apron'],
+    paint: { 'fill-color': '#1a2937', 'fill-opacity': 0.95 },
+  });
+  map.addLayer({
+    id: 'bldg', type: 'fill', source: 'ground', minzoom: 11.5,
+    filter: ['==', ['get', 'k'], 'bldg'],
+    paint: { 'fill-color': '#33475c', 'fill-opacity': 0.9 },
+  });
+  map.addLayer({
+    id: 'stand', type: 'line', source: 'ground', minzoom: 13.5,
+    filter: ['==', ['get', 'k'], 'stand'],
+    paint: {
+      'line-color': '#48657c', 'line-opacity': 0.9,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 13.5, 0.6, 16.5, 2.5],
+    },
+  });
   // 택시웨이 (OSM aeroway=taxiway) — 활주로보다 아래, 저채도
   map.addLayer({
     id: 'twy', type: 'line', source: 'taxiways', minzoom: 10.4,
@@ -515,6 +536,16 @@ function addLayers() {
       'text-font': FONT, 'text-size': 10, 'symbol-spacing': 320,
     },
     paint: { 'text-color': '#9fc0d8', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
+  });
+  // 활주로 포장 (OSM 실측): eAIP 라인은 THR→THR(착륙거리 기준)이라 턴패드까지의
+  // 실제 포장보다 짧다 — 포장 밴드가 그 구간을 채운다
+  map.addLayer({
+    id: 'rwy-pav', type: 'line', source: 'ground', minzoom: 10.0,
+    filter: ['==', ['get', 'k'], 'rwy'],
+    paint: {
+      'line-color': '#8fa3b6', 'line-opacity': 0.75,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
+    },
   });
   // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
   map.addLayer({
@@ -572,6 +603,16 @@ function addLayers() {
     },
     paint: { 'text-color': '#eef6ff', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.5 },
   });
+  // 게이트·주기장 번호
+  map.addLayer({
+    id: 'gate-label', type: 'symbol', source: 'ground', minzoom: 14.4,
+    filter: ['all', ['==', ['get', 'k'], 'gate'], ['has', 'ref']],
+    layout: {
+      'text-field': ['get', 'ref'], 'text-font': FONT,
+      'text-size': ['interpolate', ['linear'], ['zoom'], 14.5, 9, 16.5, 13],
+    },
+    paint: { 'text-color': '#8fd0ff', 'text-halo-color': COLORS.bg, 'text-halo-width': 1.3 },
+  });
 
   // 계획 경로 (편명/공항쌍 → 항로 그래프 최단경로)
   map.addLayer({
@@ -612,7 +653,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports', 'twy', 'twy-label', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num'],
+  airports: ['airports', 'apron', 'bldg', 'stand', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],
