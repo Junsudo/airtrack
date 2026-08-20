@@ -15,9 +15,12 @@ SRC = ROOT / "raw" / "osm_taxiways.json"
 DST = ROOT / "docs" / "data" / "taxiways.geojson"
 
 # OSM 오태깅 제외 (활주로 parse_runways.py의 OSM_EXCLUDE와 같은 방식).
-# CJU RWY 07 끝을 감아 도는 arc 연결로들 — 2026-08-19 실제 지상 활주로
-# 확인된 바 없음 (유저 실측). 끝 진입은 P 서단에서 직접 이뤄진다.
-OSM_EXCLUDE = {845982499, 663125359, 845982498}
+# CJU RWY 13 끝의 2노드 스텁 — 실제 유도로 아님 (유저 실측 2026-08-19).
+OSM_EXCLUDE = {848310239, 848310240}
+# 선 표현만 제거하는 way: 링(턴패드 면)과 목은 유지하되 centerline·스템을
+# 그리지 않는다. CJU 13 끝 턴패드 루프 — 턴패드는 활주로 포장의 일부이지
+# 별도 유도로가 아니다.
+LINE_SUPPRESS = {94897086}
 
 
 def _hav(a, b):
@@ -105,11 +108,12 @@ def main():
                 feats.append({"type": "Feature", "properties": {"padneck": 1},
                               "geometry": {"type": "LineString",
                                            "coordinates": [[round(cx, 5), round(cy, 5)], best[1]]}})
-            for stem in (coords[:i0 + 1], coords[i1:]):
-                if len(stem) >= 2:
-                    feats.append({"type": "Feature", "properties": dict(props),
-                                  "geometry": {"type": "LineString", "coordinates": stem}})
-        else:
+            if el["id"] not in LINE_SUPPRESS:
+                for stem in (coords[:i0 + 1], coords[i1:]):
+                    if len(stem) >= 2:
+                        feats.append({"type": "Feature", "properties": dict(props),
+                                      "geometry": {"type": "LineString", "coordinates": stem}})
+        elif el["id"] not in LINE_SUPPRESS:
             feats.append({"type": "Feature", "properties": props,
                           "geometry": {"type": "LineString", "coordinates": coords}})
     fc = {"type": "FeatureCollection", "features": feats}
