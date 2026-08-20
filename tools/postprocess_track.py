@@ -154,6 +154,27 @@ def main():
 
     gs = lambda p: (p["spd"] or 0) * 1.9438
 
+    def on_runway(apt, lon, lat):
+        segs, adj, key, latc = build_net(apt)
+        for lid, a, b, st in segs:
+            if not lid.startswith("r"):
+                continue
+            d, sl, sp = project(lon, lat, a, b, latc)
+            if d < 50:
+                return True
+        return False
+
+    def ground_of(p):
+        apt = nearest_airport(p["lon"], p["lat"])
+        if not apt:
+            return None
+        if gs(p) < 175:
+            return apt
+        # 회전·부양·접지 활주: 고속이라도 활주로 라인 위면 아직 지상
+        if gs(p) < 250 and on_runway(apt, p["lon"], p["lat"]):
+            return apt
+        return None
+
     # 1) 저속 스파이크 필터
     out = [track[0]]; spike = 0
     for q in track[1:]:
@@ -170,7 +191,7 @@ def main():
         out.append(q)
     track = out
 
-    ground = [nearest_airport(p["lon"], p["lat"]) if gs(p) < 175 else None for p in track]
+    ground = [ground_of(p) for p in track]
 
     # 2) 정지 산란 붕괴 (실이동 보존)
     t1 = []; i = 0
@@ -193,7 +214,7 @@ def main():
                     continue
         t1.append(dict(track[i])); i += 1
     track = t1
-    ground = [nearest_airport(p["lon"], p["lat"]) if gs(p) < 175 else None for p in track]
+    ground = [ground_of(p) for p in track]
 
     # 3) 스냅
     recs = []; prev_lid = None

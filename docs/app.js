@@ -545,7 +545,7 @@ function addLayers() {
     id: 'rwy-pav', type: 'line', source: 'ground', minzoom: 10.0,
     filter: ['==', ['get', 'k'], 'rwy'],
     paint: {
-      'line-color': '#8fa3b6', 'line-opacity': 0.75,
+      'line-color': '#6e8091', 'line-opacity': 1,
       'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
     },
   });
@@ -555,14 +555,14 @@ function addLayers() {
     id: 'twy-padneck', type: 'line', source: 'taxiways', minzoom: 10.0,
     filter: ['has', 'padneck'],
     paint: {
-      'line-color': '#8fa3b6', 'line-opacity': 0.75,
+      'line-color': '#6e8091', 'line-opacity': 1,
       'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
     },
   });
   map.addLayer({
     id: 'twy-pad', type: 'fill', source: 'taxiways', minzoom: 10.0,
     filter: ['has', 'pad'],
-    paint: { 'fill-color': '#8fa3b6', 'fill-opacity': 0.75 },
+    paint: { 'fill-color': '#6e8091', 'fill-opacity': 1 },
   });
   // 활주로 심벌 (eAIP THR→THR): 저배율에선 활주로 심벌, 포장 밴드가 나타나는
   // 고배율에선 얇은 centerline로 강등 — OSM 포장과 이중 모서리를 만들지 않는다

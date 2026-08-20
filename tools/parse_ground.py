@@ -45,11 +45,23 @@ def main():
             geom = {"type": geom_type, "coordinates": [cs] if geom_type == "Polygon" else cs}
         feats.append({"type": "Feature", "properties": props, "geometry": geom})
 
+    # 활주로 포장: OSM way를 그대로 쓰면 끝(턴패드 방향)에서 굽는다 —
+    # eAIP THR 라인 축에 OSM 포장 정점을 투영해 곧게 편 선으로 만든다.
+    # 길이(THR 밖 포장 포함)는 투영 범위로 유지된다.
+    import math
+    eaip = json.loads((ROOT / "docs" / "data" / "runways.geojson").read_text())["features"]
+    osm_rwy_ways = []
+
     g = json.loads((ROOT / "raw" / "osm_ground.json").read_text())
     for el in g.get("elements", []):
         aw = (el.get("tags") or {}).get("aeroway")
         if el["type"] == "way" and aw == "runway":
-            add(el, "rwy", "LineString")
+            key = ("rwy-raw", el["id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            osm_rwy_ways.append(coords_of(el))
+            continue
         elif el["type"] == "way" and aw == "apron":
             add(el, "apron", "Polygon", close=True)
         elif el["type"] == "way" and aw == "parking_position":
@@ -63,6 +75,42 @@ def main():
                                            "coordinates": [round(p["lon"], 5), round(p["lat"], 5)]}})
         elif el["type"] == "node" and aw in ("gate", "parking_position"):
             add(el, "gate", "Point", ref_ok=True)
+
+    # 포장 직선화: eAIP 라인마다 80 m 이내 OSM 정점을 축에 투영해 범위 산출
+    used = set()
+    for f in eaip:
+        a, bb = f["geometry"]["coordinates"][0], f["geometry"]["coordinates"][-1]
+        latc = (a[1] + bb[1]) / 2
+        kx = 111320 * math.cos(math.radians(latc)); ky = 111320
+        ax, ay = a[0] * kx, a[1] * ky
+        dx, dy = bb[0] * kx - ax, bb[1] * ky - ay
+        L = math.hypot(dx, dy)
+        ux, uy = dx / L, dy / L
+        tmin, tmax = 0.0, L
+        matched = False
+        for wi, cs in enumerate(osm_rwy_ways):
+            pts = [(c[0] * kx - ax, c[1] * ky - ay) for c in cs]
+            lat_ok = all(abs(-uy * px + ux * py) < 80 for px, py in pts)
+            near = any(-200 < (px * ux + py * uy) < L + 200 for px, py in pts)
+            if lat_ok and near:
+                matched = True
+                used.add(wi)
+                for px, py in pts:
+                    t = px * ux + py * uy
+                    tmin, tmax = min(tmin, t), max(tmax, t)
+        if matched:
+            cs = [[round((ax + tmin * ux) / kx, 5), round((ay + tmin * uy) / ky, 5)],
+                  [round((ax + tmax * ux) / kx, 5), round((ay + tmax * uy) / ky, 5)]]
+        else:
+            cs = [list(a), list(bb)]
+        feats.append({"type": "Feature", "properties": {"k": "rwy"},
+                      "geometry": {"type": "LineString", "coordinates": cs}})
+    # eAIP에 없는 OSM 활주로(군기지 일부)는 양끝 chord로 직선화해 유지
+    for wi, cs in enumerate(osm_rwy_ways):
+        if wi in used or len(cs) < 2:
+            continue
+        feats.append({"type": "Feature", "properties": {"k": "rwy"},
+                      "geometry": {"type": "LineString", "coordinates": [cs[0], cs[-1]]}})
 
     b = json.loads((ROOT / "raw" / "osm_buildings.json").read_text())
     for el in b.get("elements", []):

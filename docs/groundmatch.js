@@ -87,9 +87,10 @@ const GM = (() => {
     const px = lon * kx, py = lat * ky;
     const ax = a[0] * kx, ay = a[1] * ky, bx = b[0] * kx, by = b[1] * ky;
     const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
-    const t = L2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2));
+    const raw = L2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / L2;
+    const t = Math.max(0, Math.min(1, raw));
     const qx = ax + t * dx, qy = ay + t * dy;
-    return { d: Math.hypot(px - qx, py - qy), lon: qx / kx, lat: qy / ky };
+    return { d: Math.hypot(px - qx, py - qy), lon: qx / kx, lat: qy / ky, cl: raw <= 0 || raw >= 1 };
   }
 
   function snapPoint(net, lon, lat, gsKt, prevLid) {
@@ -97,10 +98,22 @@ const GM = (() => {
     for (const s of net.segs) {
       if (s.stand && gsKt >= 8) continue;
       const pr = project(lon, lat, s.a, s.b, net.latc);
+      if (pr.cl && pr.d > 30) continue;   // 선분 범위 밖 클램프 — 후보 제외
       const eff = pr.d * (s.lid === prevLid ? 0.5 : 1.0);
       if (!best || eff < best.eff) best = { eff, d: pr.d, lon: pr.lon, lat: pr.lat, lid: s.lid, seg: s };
     }
     return best;
+  }
+
+  /* 고속(≥175 kt)이라도 활주로 라인 50 m 이내면 아직 활주로 위 —
+   * 회전·부양·접지 활주 구간을 centerline에 붙여 이탈 단차를 없앤다. */
+  function onRunway(net, lon, lat) {
+    for (const s of net.segs) {
+      if (s.lid[0] !== 'r') continue;
+      const pr = project(lon, lat, s.a, s.b, net.latc);
+      if (!pr.cl && pr.d < 50) return true;
+    }
+    return false;
   }
 
   /* 실시간: 표시 위치용 스냅. 저속(<60 kt)에서만, 40 m(정지 120 m) 이내일 때. */
@@ -181,10 +194,15 @@ const GM = (() => {
       filtered.push(q);
     }
     track = filtered;
-    const ground = track.map((p) => {
-      if (gs(p) >= 175) return null;
-      return nearestAirport(p.lon, p.lat);
-    });
+    const groundOf = (p) => {
+      const apt = nearestAirport(p.lon, p.lat);
+      if (!apt) return null;
+      if (gs(p) < 175) return apt;
+      // 회전·부양·접지 활주: 고속이라도 활주로 라인 위면 아직 지상
+      if (gs(p) < 250 && onRunway(buildNet(apt), p.lon, p.lat)) return apt;
+      return null;
+    };
+    const ground = track.map(groundOf);
     // 1) dwell 붕괴 (실이동 보존)
     const med = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[s.length >> 1]; };
     const t1 = [];
@@ -206,7 +224,7 @@ const GM = (() => {
       t1.push({ ...track[i] }); i++;
     }
     // 2) 스냅
-    const g1 = t1.map((p) => (gs(p) < 175 ? nearestAirport(p.lon, p.lat) : null));
+    const g1 = t1.map(groundOf);
     const recs = [];
     let prevLid = null;
     for (let i = 0; i < t1.length; i++) {
