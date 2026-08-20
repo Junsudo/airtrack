@@ -227,6 +227,8 @@ def main():
         for lid, a, b, stand in segs:
             if stand and gs(p) >= 8:
                 continue
+            if gs(p) >= 100 and not lid.startswith("r"):
+                continue   # 고속은 활주로 위뿐 — 유도로에 붙지 않는다
             d, sl, sp = project(p["lon"], p["lat"], a, b, latc)
             eff = d * (0.5 if lid == prev_lid else 1.0)
             if best is None or eff < best[0]:
@@ -339,6 +341,29 @@ def main():
                                       "alt": r["p"]["alt"], "spd": r["p"]["spd"]})
         final.append(r["p"]); prev_snap = r
     final += [x["p"] for x in pending]
+
+    # 니들·전환 킹크 제거: 지상에서 150° 되접힘 또는 짧은 다리(합 50 m 미만)의
+    # 60° 초과 급꺾임은 스냅 전환 아티팩트
+    removed = True
+    while removed:
+        removed = False
+        for i in range(1, len(final) - 1):
+            a, b, c = final[i - 1], final[i], final[i + 1]
+            gb = (b["spd"] or 0) * 1.9438
+            if gb < 3 or gb > 175:
+                continue
+            d1 = hav(a["lon"], a["lat"], b["lon"], b["lat"])
+            d2 = hav(b["lon"], b["lat"], c["lon"], c["lat"])
+            if d1 > 60 or d2 > 60 or d1 < 0.5 or d2 < 0.5:
+                continue
+            b1 = math.atan2(b["lon"] - a["lon"], b["lat"] - a["lat"])
+            b2 = math.atan2(c["lon"] - b["lon"], c["lat"] - b["lat"])
+            dv = abs(math.degrees(b2 - b1)) % 360
+            dv = min(dv, 360 - dv)
+            if (dv > 150 or (dv > 60 and d1 + d2 < 50)) and nearest_airport(b["lon"], b["lat"]):
+                final.pop(i)
+                removed = True
+                break
 
     # 공중 불변 검증
     fmap = {}

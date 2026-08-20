@@ -90,24 +90,10 @@ def main():
             props["ref"] = ref
         tr = turn_ring(coords)
         if tr:
-            # 링 구간의 centerline은 버리고(올가미 선 방지) 면 + 스템만 남긴다.
-            # 턴패드는 분리된 방울이 아니라 활주로 포장의 일부 — 가장 가까운
-            # 활주로 끝(150 m 이내)과 목(neck) 포장으로 잇는다.
+            # 턴패드는 넓은 활주로 포장 안에 있다 — 별도 면·목·루프 선을 그리지
+            # 않는다 (유저 실측 확정). 루프 centerline만 제거하고 스템은 유지.
             ring, i0, i1 = tr
             pads += 1
-            feats.append({"type": "Feature", "properties": {"pad": 1},
-                          "geometry": {"type": "Polygon", "coordinates": [ring]}})
-            cx = sum(c[0] for c in ring[:-1]) / (len(ring) - 1)
-            cy = sum(c[1] for c in ring[:-1]) / (len(ring) - 1)
-            best = None
-            for e in rw_ends:
-                de = _hav([cx, cy], e)
-                if de < 150 and (best is None or de < best[0]):
-                    best = (de, e)
-            if best:
-                feats.append({"type": "Feature", "properties": {"padneck": 1},
-                              "geometry": {"type": "LineString",
-                                           "coordinates": [[round(cx, 5), round(cy, 5)], best[1]]}})
             if el["id"] not in LINE_SUPPRESS:
                 for stem in (coords[:i0 + 1], coords[i1:]):
                     if len(stem) >= 2:

@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "airtrack",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8735", "--directory", "/Users/junsu/airtrack/docs"],
-      "autoPort": false,
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "exec python3 -m http.server \"$PORT\" --directory /Users/junsu/airtrack/docs"],
+      "autoPort": true,
       "port": 8735
     }
   ]

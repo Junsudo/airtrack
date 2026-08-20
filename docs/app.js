@@ -549,21 +549,7 @@ function addLayers() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
     },
   });
-  // 활주로 끝 턴패드: 분리된 방울이 아니라 활주로 포장의 일부 — 목(neck)
-  // 포장으로 활주로 끝과 이어 한 덩어리로 그린다
-  map.addLayer({
-    id: 'twy-padneck', type: 'line', source: 'taxiways', minzoom: 10.0,
-    filter: ['has', 'padneck'],
-    paint: {
-      'line-color': '#6e8091', 'line-opacity': 1,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
-    },
-  });
-  map.addLayer({
-    id: 'twy-pad', type: 'fill', source: 'taxiways', minzoom: 10.0,
-    filter: ['has', 'pad'],
-    paint: { 'fill-color': '#6e8091', 'fill-opacity': 1 },
-  });
+  // 턴패드는 넓은 활주로 포장 안 — 별도 표현 없음 (유저 실측 확정)
   // 활주로 심벌 (eAIP THR→THR): 저배율에선 활주로 심벌, 포장 밴드가 나타나는
   // 고배율에선 얇은 centerline로 강등 — OSM 포장과 이중 모서리를 만들지 않는다
   map.addLayer({
@@ -671,7 +657,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports', 'apron', 'bldg', 'stand', 'twy-padneck', 'twy-pad', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
+  airports: ['airports', 'apron', 'bldg', 'stand', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],

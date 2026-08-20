@@ -97,6 +97,7 @@ const GM = (() => {
     let best = null;
     for (const s of net.segs) {
       if (s.stand && gsKt >= 8) continue;
+      if (gsKt >= 100 && s.lid[0] !== 'r') continue;   // 고속은 활주로 위뿐 — 유도로에 붙지 않는다
       const pr = project(lon, lat, s.a, s.b, net.latc);
       if (pr.cl && pr.d > 30) continue;   // 선분 범위 밖 클램프 — 후보 제외
       const eff = pr.d * (s.lid === prevLid ? 0.5 : 1.0);
@@ -232,7 +233,9 @@ const GM = (() => {
       if (!g1[i]) { recs.push({ p, flag: 'air' }); prevLid = null; continue; }
       const net = buildNet(g1[i]);
       const s = snapPoint(net, p.lon, p.lat, gs(p), prevLid);
-      const lim = gs(p) < 3 ? 120 : 50;
+      // 고속은 측방 25 m 이내만 — 활주로를 떠나는 중(고속탈출)의 점을
+      // 활주로로 끌어붙이지 않는다
+      const lim = gs(p) < 3 ? 120 : (gs(p) >= 100 ? 25 : 50);
       if (s && s.d < lim) {
         prevLid = s.lid;
         recs.push({ p: { ...p, lon: s.lon, lat: s.lat }, flag: 'snap', lid: s.lid, seg: s.seg, apt: g1[i] });
@@ -308,6 +311,29 @@ const GM = (() => {
       prevSnap = r;
     }
     out.push(...pending.map((x) => x.p));
+    // 니들 제거: 지상에서 150° 이상 되접히고 양쪽 다리가 짧은(<60 m) 점은
+    // 전환 아티팩트 — 실제 유턴은 다리가 길거나 저속 dwell로 이미 처리됨
+    let removed = true;
+    while (removed) {
+      removed = false;
+      for (let i = 1; i < out.length - 1; i++) {
+        const a = out[i - 1], b = out[i], c = out[i + 1];
+        if (gs(b) < 3 || gs(b) > 175) continue;
+        const d1 = distM(a.lon, a.lat, b.lon, b.lat);
+        const d2 = distM(b.lon, b.lat, c.lon, c.lat);
+        if (d1 > 60 || d2 > 60 || d1 < 0.5 || d2 < 0.5) continue;
+        const b1 = Math.atan2(b.lon - a.lon, b.lat - a.lat);
+        const b2 = Math.atan2(c.lon - b.lon, c.lat - b.lat);
+        let dv = Math.abs((b2 - b1) * 180 / Math.PI) % 360;
+        dv = Math.min(dv, 360 - dv);
+        // 150° 되접힘(니들) 또는 짧은 다리의 급꺾임(전환 Z-단차) 제거
+        if ((dv > 150 || (dv > 60 && d1 + d2 < 50)) && nearestAirport(b.lon, b.lat)) {
+          out.splice(i, 1);
+          removed = true;
+          break;
+        }
+      }
+    }
     return out;
   }
 

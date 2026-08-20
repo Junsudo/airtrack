@@ -76,6 +76,23 @@ def main():
         elif el["type"] == "node" and aw in ("gate", "parking_position"):
             add(el, "gate", "Point", ref_ok=True)
 
+    # 같은 ref가 80 m 이내에 중복 발행되면(노드 + 주기장 리드인 끝점) 하나만 남긴다
+    import math as _m
+    def _d(a, b):
+        kx = 111320 * _m.cos(_m.radians(a[1]))
+        return _m.hypot((a[0]-b[0])*kx, (a[1]-b[1])*111320)
+    kept = []
+    seen_refs = {}
+    for f in feats:
+        if f["properties"].get("k") == "gate" and f["properties"].get("ref"):
+            ref = f["properties"]["ref"]
+            c = f["geometry"]["coordinates"]
+            if any(_d(c, c2) < 80 for c2 in seen_refs.get(ref, [])):
+                continue
+            seen_refs.setdefault(ref, []).append(c)
+        kept.append(f)
+    feats[:] = kept
+
     # 포장 직선화: eAIP 라인마다 80 m 이내 OSM 정점을 축에 투영해 범위 산출
     used = set()
     for f in eaip:
