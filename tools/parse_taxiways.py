@@ -14,6 +14,11 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "raw" / "osm_taxiways.json"
 DST = ROOT / "docs" / "data" / "taxiways.geojson"
 
+# OSM 오태깅 제외 (활주로 parse_runways.py의 OSM_EXCLUDE와 같은 방식).
+# CJU RWY 07 끝을 감아 도는 arc 연결로들 — 2026-08-19 실제 지상 활주로
+# 확인된 바 없음 (유저 실측). 끝 진입은 P 서단에서 직접 이뤄진다.
+OSM_EXCLUDE = {845982499, 663125359, 845982498}
+
 
 def _hav(a, b):
     import math
@@ -48,13 +53,28 @@ def turn_ring(coords):
     return None
 
 
+def runway_ends():
+    """OSM 활주로 포장 라인의 끝점들 — 턴패드 목(neck) 연결용."""
+    path = ROOT / "raw" / "osm_ground.json"
+    ends = []
+    if path.exists():
+        for el in json.loads(path.read_text()).get("elements", []):
+            if el.get("type") == "way" and (el.get("tags") or {}).get("aeroway") == "runway":
+                g = el.get("geometry") or []
+                if len(g) >= 2:
+                    ends.append([round(g[0]["lon"], 5), round(g[0]["lat"], 5)])
+                    ends.append([round(g[-1]["lon"], 5), round(g[-1]["lat"], 5)])
+    return ends
+
+
 def main():
     d = json.loads(SRC.read_text())
     feats = []
     seen = set()
     pads = 0
+    rw_ends = runway_ends()
     for el in d.get("elements", []):
-        if el.get("type") != "way" or el["id"] in seen:
+        if el.get("type") != "way" or el["id"] in seen or el["id"] in OSM_EXCLUDE:
             continue
         seen.add(el["id"])
         geom = el.get("geometry") or []
@@ -67,11 +87,24 @@ def main():
             props["ref"] = ref
         tr = turn_ring(coords)
         if tr:
-            # 링 구간의 centerline은 버리고(올가미 선 방지) 면 + 스템만 남긴다
+            # 링 구간의 centerline은 버리고(올가미 선 방지) 면 + 스템만 남긴다.
+            # 턴패드는 분리된 방울이 아니라 활주로 포장의 일부 — 가장 가까운
+            # 활주로 끝(150 m 이내)과 목(neck) 포장으로 잇는다.
             ring, i0, i1 = tr
             pads += 1
             feats.append({"type": "Feature", "properties": {"pad": 1},
                           "geometry": {"type": "Polygon", "coordinates": [ring]}})
+            cx = sum(c[0] for c in ring[:-1]) / (len(ring) - 1)
+            cy = sum(c[1] for c in ring[:-1]) / (len(ring) - 1)
+            best = None
+            for e in rw_ends:
+                de = _hav([cx, cy], e)
+                if de < 150 and (best is None or de < best[0]):
+                    best = (de, e)
+            if best:
+                feats.append({"type": "Feature", "properties": {"padneck": 1},
+                              "geometry": {"type": "LineString",
+                                           "coordinates": [[round(cx, 5), round(cy, 5)], best[1]]}})
             for stem in (coords[:i0 + 1], coords[i1:]):
                 if len(stem) >= 2:
                     feats.append({"type": "Feature", "properties": dict(props),

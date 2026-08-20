@@ -549,19 +549,29 @@ function addLayers() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
     },
   });
-  // 활주로 끝 턴패드: 차트처럼 포장 확장부로 — 활주로 포장과 같은 스타일
+  // 활주로 끝 턴패드: 분리된 방울이 아니라 활주로 포장의 일부 — 목(neck)
+  // 포장으로 활주로 끝과 이어 한 덩어리로 그린다
+  map.addLayer({
+    id: 'twy-padneck', type: 'line', source: 'taxiways', minzoom: 10.0,
+    filter: ['has', 'padneck'],
+    paint: {
+      'line-color': '#8fa3b6', 'line-opacity': 0.75,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
+    },
+  });
   map.addLayer({
     id: 'twy-pad', type: 'fill', source: 'taxiways', minzoom: 10.0,
     filter: ['has', 'pad'],
     paint: { 'fill-color': '#8fa3b6', 'fill-opacity': 0.75 },
   });
-  // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
+  // 활주로 심벌 (eAIP THR→THR): 저배율에선 활주로 심벌, 포장 밴드가 나타나는
+  // 고배율에선 얇은 centerline로 강등 — OSM 포장과 이중 모서리를 만들지 않는다
   map.addLayer({
     id: 'rwy', type: 'line', source: 'runways', minzoom: 9.2,
     filter: ['!=', ['get', 'src'], 'ato-approx'],
     paint: {
       'line-color': '#c9d9e8', 'line-opacity': 0.95,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 13, 7, 16.5, 18],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.5, 11.5, 5, 13, 3, 16.5, 3],
     },
   });
   map.addLayer({
@@ -661,7 +671,7 @@ const LAYER_GROUPS = {
   navaids: ['navaids'],
   areas: ['areas-fill', 'areas-line', 'areas-label'],
   areas2: ['areas2-fill', 'areas2-line', 'areas2-label'],
-  airports: ['airports', 'apron', 'bldg', 'stand', 'twy-pad', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
+  airports: ['airports', 'apron', 'bldg', 'stand', 'twy-padneck', 'twy-pad', 'twy', 'twy-label', 'rwy-pav', 'rwy', 'rwy-approx', 'rwy-label', 'rwy-num', 'gate-label'],
   boundaries: ['bnd-prov-line', 'bnd-muni-line', 'bnd-prov-label', 'bnd-muni-label'],
   ctr: ['ctr-line', 'ctr-label', 'ctr-hit'],
   tma: ['tma-line', 'tma-label', 'tma-hit'],
