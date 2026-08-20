@@ -162,6 +162,25 @@ const GM = (() => {
   function processTrack(track) {
     if (!track || track.length < 3) return track;
     const gs = (p) => (p.spd || 0) * 1.9438;
+    // 0) 저속 스파이크 필터 — 실시간 필터(v31) 이전에 기록된 트랙과
+    // 3회 연속 규칙으로 통과한 잔여 스파이크를 표시 전에 걸러낸다
+    const filtered = [track[0]];
+    let spikeN = 0;
+    for (let i = 1; i < track.length; i++) {
+      const q = track[i], last = filtered[filtered.length - 1];
+      const dt = (q.t - last.t) / 1000;
+      const vrep = Math.max(q.spd || 0, last.spd || 0);
+      if (dt > 0 && dt < 30 && vrep < 15) {   // 저속(<15 m/s ≈ 30 kt)에서만 — 실시간 필터와 동일
+        const d = distM(last.lon, last.lat, q.lon, q.lat);
+        if (d > vrep * dt + 25 + 12 && d / dt > 25) {
+          spikeN++;
+          if (spikeN < 3) continue;
+        }
+      }
+      spikeN = 0;
+      filtered.push(q);
+    }
+    track = filtered;
     const ground = track.map((p) => {
       if (gs(p) >= 175) return null;
       return nearestAirport(p.lon, p.lat);

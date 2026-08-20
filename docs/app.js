@@ -521,12 +521,6 @@ function addLayers() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 13.5, 0.6, 16.5, 2.5],
     },
   });
-  // 턴패드: OSM centerline 루프가 감싼 면을 포장으로 채움 (얇은 루프 선 방지)
-  map.addLayer({
-    id: 'twy-pad', type: 'fill', source: 'taxiways', minzoom: 10.4,
-    filter: ['has', 'pad'],
-    paint: { 'fill-color': '#5f7d94', 'fill-opacity': 0.55 },
-  });
   // 택시웨이 (OSM aeroway=taxiway) — 활주로보다 아래, 저채도
   map.addLayer({
     id: 'twy', type: 'line', source: 'taxiways', minzoom: 10.4,
@@ -554,6 +548,12 @@ function addLayers() {
       'line-color': '#8fa3b6', 'line-opacity': 0.75,
       'line-width': ['interpolate', ['linear'], ['zoom'], 10.5, 2, 13, 10, 16.5, 30],
     },
+  });
+  // 활주로 끝 턴패드: 차트처럼 포장 확장부로 — 활주로 포장과 같은 스타일
+  map.addLayer({
+    id: 'twy-pad', type: 'fill', source: 'taxiways', minzoom: 10.0,
+    filter: ['has', 'pad'],
+    paint: { 'fill-color': '#8fa3b6', 'fill-opacity': 0.75 },
   });
   // 활주로 심벌: 고배율에서 실제 THR 좌표 기준 방향·길이. ato 근사분은 파선.
   map.addLayer({

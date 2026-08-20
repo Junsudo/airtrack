@@ -26,10 +26,12 @@ def _hav(a, b):
 
 def turn_ring(coords):
     """턴패드 검출: 폐곡(또는 15 m 이내 근접 폐곡)이고 둘레가 60 m 넘는 루프.
-    OSM은 턴패드를 centerline 루프로 그리므로, 루프가 감싼 면을 포장으로 채운다."""
+    OSM은 턴패드를 centerline 루프로 그리는데, 차트에는 루프 선이 아니라
+    포장 면으로 나타나야 한다 → (링, 시작 idx, 끝 idx)를 돌려주고 호출부가
+    링 구간의 선을 제거한다."""
     n = len(coords)
     if n >= 4 and coords[0] == coords[-1]:
-        return coords
+        return coords, 0, n - 1
     best = None
     for i in range(n - 4):
         for j in range(n - 1, i + 3, -1):
@@ -42,7 +44,7 @@ def turn_ring(coords):
         ring = coords[best[0]:best[1] + 1]
         if ring[0] != ring[-1]:
             ring = ring + [ring[0]]
-        return ring
+        return ring, best[0], best[1]
     return None
 
 
@@ -63,13 +65,20 @@ def main():
         ref = (el.get("tags") or {}).get("ref")
         if ref:
             props["ref"] = ref
-        feats.append({"type": "Feature", "properties": props,
-                      "geometry": {"type": "LineString", "coordinates": coords}})
-        ring = turn_ring(coords)
-        if ring:
+        tr = turn_ring(coords)
+        if tr:
+            # 링 구간의 centerline은 버리고(올가미 선 방지) 면 + 스템만 남긴다
+            ring, i0, i1 = tr
             pads += 1
             feats.append({"type": "Feature", "properties": {"pad": 1},
                           "geometry": {"type": "Polygon", "coordinates": [ring]}})
+            for stem in (coords[:i0 + 1], coords[i1:]):
+                if len(stem) >= 2:
+                    feats.append({"type": "Feature", "properties": dict(props),
+                                  "geometry": {"type": "LineString", "coordinates": stem}})
+        else:
+            feats.append({"type": "Feature", "properties": props,
+                          "geometry": {"type": "LineString", "coordinates": coords}})
     fc = {"type": "FeatureCollection", "features": feats}
     DST.write_text(json.dumps(fc, ensure_ascii=False, separators=(",", ":")))
     print(f"taxiways: {len(feats)} features (turn pads {pads}) → {DST} ({DST.stat().st_size/1024:.0f} KB)")
